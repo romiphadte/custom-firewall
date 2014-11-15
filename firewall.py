@@ -40,7 +40,7 @@ class Firewall:
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
     # @pkt: the actual data of the IPv4 packet (including IP header)
-    def country_for_ip(ip): #expecting ip string
+    def country_for_ip(self,ip): #expecting ip string
         ip_min=0
         ip_max=len(self.ip_ranges) 
 
@@ -106,7 +106,7 @@ class Firewall:
 
         ipid=struct.unpack('!H',pkt[4:6])
 
-        country=country_for_ip(src_ip)
+        country=self.country_for_ip(src_ip)
         if country is not None:
             print "This packet came from ", country
 
