@@ -40,6 +40,27 @@ class Firewall:
 
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
     # @pkt: the actual data of the IPv4 packet (including IP header)
+    def country_for_ip(ip): #expecting ip string
+        ip_min=0
+        ip_max=len(self.ip_ranges) 
+
+        while True:
+            index=(ip_min+ip_max)/2
+            r=self.ip_ranges[index]
+
+            if socket.aton(r[0])<=ip and ip<=socket.aton(r[1]): #in range
+                return r[2]
+            elif socket.aton(r[1])<ip:
+                ip_min=index
+
+            elif socket.aton(r[0])>ip:
+                ip_max=index
+
+            if ip_max==ip_min:
+                return None
+
+
+
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
 
@@ -55,6 +76,8 @@ class Firewall:
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule 
                 break;
+
+
 
     def pass_packet(self,pkt, pkt_dir):
         if pkt_dir==PKT_DIR_INCOMING:
@@ -78,7 +101,14 @@ class Firewall:
         if pkt_protocol!=rule_protocol:
             return False
 
-        pdb.set_trace() 
+        src_ip=pkt[12:16]
+        dst_ip=pkt[16:20]
+
+        ipid=struct.unpack('!H',pkt[4:6])
+
+        country=country_for_ip(src_ip)
+        if country is not None:
+            print "This packet came from ", country
 
         return True
 
