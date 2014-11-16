@@ -3,6 +3,7 @@
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 import pdb
 import struct
+import socket
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -38,6 +39,24 @@ class Firewall:
         self.ip_ranges=ip_ranges
 
 
+    def country_for_ip(self,ip): #expecting ip string
+        ip_min=0
+        ip_max=len(self.ip_ranges) 
+
+        while True:
+            index=(ip_min+ip_max)/2
+            r=self.ip_ranges[index]
+
+            if socket.inet_aton(r[0])<=ip and ip<=socket.inet_aton(r[1]): #in range
+                return r[2]
+            elif ip_max==index or ip_min==index:
+                return None
+            elif socket.inet_aton(r[1])<ip:
+                ip_min=index
+            elif socket.inet_aton(r[0])>ip:
+                ip_max=index
+
+
     # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
     # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
@@ -48,13 +67,15 @@ class Firewall:
             return
 
         for rule in self.rules:
-            if self.packet_matches_rule(pkt,rule):
+            if self.packet_matches_rule(pkt,pkt_dir,rule):
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
                     print "pass pkt"
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule 
                 break;
+
+
 
     def pass_packet(self,pkt, pkt_dir):
         if pkt_dir==PKT_DIR_INCOMING:
@@ -64,10 +85,10 @@ class Firewall:
  
     # TODO: You can add more methods as you want.
 
-    def packet_matches_rule(self,pkt,rule):
+    def packet_matches_rule(self,pkt,pkt_dir,rule):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         rule_protocol=rule[1]
-        
+            
         if pkt_protocol==17:
             pkt_protocol="udp"
         elif pkt_protocol==6:
@@ -78,8 +99,33 @@ class Firewall:
         if pkt_protocol!=rule_protocol:
             return False
 
-        pdb.set_trace() 
+        ip_header_len = struct.unpack('!B',pkt[0:1]) & 0xF
+        udp_pkt = pkt[ip_header_len:]
 
+        if rule_protocol=="dns"
+                and pkt_dir==PKT_DIR_OUTGOING
+                and struct.unpack('!B',udp_pkt[0:2]) == 53:
+            dns_pkt = udp_pkt[8:]
+            query = dns_pkt[12:].rstrip()
+            if rule[3][0] == "*":
+                rule_name = rule[3][1::-1]
+                query_name = query[::-1]
+                if rule_name == query_name[:len(rule_name)]:
+                    return True
+                return False
+            if rule[3] == query[len(rule[3])]:
+                return True
+            return False
+
+        src_ip=pkt[12:16]
+        dst_ip=pkt[16:20]
+
+        ipid=struct.unpack('!H',pkt[4:6])
+        country=self.country_for_ip(src_ip)
+        if country is not None:
+            print "This packet came from ", country
+        else:
+            print "country not found"
         return True
 
     def should_ignore_packet(self,pkt):
