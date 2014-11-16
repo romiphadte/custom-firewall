@@ -22,8 +22,9 @@ class Firewall:
         rules=f.readlines()
         
         rules=[rule.strip("\n") for rule in rules]
-        rules=[rule.split(" ") for rule in rules]
-        rules=[rule for rule in rules if rule[0]=="pass" or rule[0]=="drop"]
+        rules=[rule.split() for rule in rules]
+        print rules
+        rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="pass" or rule[0]=="drop")]
         rules=rules[::-1]
        
         self.rules=rules #cleaned set of all rules that are in reverse priority
@@ -93,33 +94,41 @@ class Firewall:
         rule_protocol=rule[1]
 
         udp_pkt = self.strip_ip(pkt)
-
-        if rule_protocol=="dns"\
-                and pkt_dir==PKT_DIR_OUTGOING\
-                and struct.unpack('!BB',udp_pkt[0:2]) == 53:
-            print "dns packet"
+        #print str(pkt_dir) + "?" + str(PKT_DIR_OUTGOING) + "," + str(struct.unpack('!BB',udp_pkt[0:2])[1])
+        proto_match = rule_protocol=="dns"
+        is_outgoing = int(pkt_dir)==PKT_DIR_OUTGOING
+        correct_port = struct.unpack('!BB',udp_pkt[2:4])[1] == 53
+        #print str(proto_match) + "," + str(is_outgoing) + "," + str(correct_port)
+        if proto_match and is_outgoing and correct_port:
             dns_pkt = udp_pkt[8:]
             query = dns_pkt[12:].rstrip()
-            if rule[3][0] == "*":
-                rule_name = rule[3][1::-1]
+            if rule[2][0] == "*":
+                rule_name = rule[2][1:].replace(".","")
+                rule_name = rule_name[::-1]
                 query_name = query[::-1]
+                print rule_name
+                print query_name
                 if rule_name == query_name[:len(rule_name)]:
+                    print "MATCH"
                     return True
                 return False
-            if rule[3] == query[len(rule[3])]:
+            rule_name = rule[2].replace(".","")
+            print rule_name
+            print query
+            query_match = rule_name.strip() == query.strip() #For some reason, this is false!
+            print str(query_match)
+            if query_match:
+                print "MATCH"
                 return True
             return False
 
         else:
             if pkt_protocol==17:
                 pkt_protocol="udp"
-                print "udp packet"
             elif pkt_protocol==6:
                 pkt_protocol="tcp"
-                print "tcp packet"
             elif pkt_protocol==1:
                 pkt_protocol="icmp"
-                print "icmp packet"
 
             if pkt_protocol!=rule_protocol:
                 return False
