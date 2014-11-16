@@ -4,6 +4,7 @@ from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 import pdb
 import struct
 import socket
+import re
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -101,26 +102,38 @@ class Firewall:
         #print str(proto_match) + "," + str(is_outgoing) + "," + str(correct_port)
         if proto_match and is_outgoing and correct_port:
             dns_pkt = udp_pkt[8:]
-            query = dns_pkt[12:].rstrip()
-            if rule[2][0] == "*":
-                rule_name = rule[2][1:].replace(".","")
-                rule_name = rule_name[::-1]
-                query_name = query[::-1]
-                print rule_name
-                print query_name
-                if rule_name == query_name[:len(rule_name)]:
-                    print "MATCH"
+            query = dns_pkt[12:]
+            rule_name = re.split("\W+", rule[2])[::-1]
+            query_name = re.split("\W+", query.split("\x00"))[::-1]
+            query_type = query.split("\x00")[-2]
+            query_class = query.split("\x00")[-1]
+            i = 0
+            while i < len(rule_name) and i < len(query_name):
+                if rule_name[i] == "*":
                     return True
-                return False
-            rule_name = rule[2].replace(".","")
-            print rule_name
-            print query
-            query_match = rule_name.strip() == query.strip() #For some reason, this is false!
-            print str(query_match)
-            if query_match:
-                print "MATCH"
-                return True
-            return False
+                if rule_name[i] != query_name[i]:
+                    return False
+                i += 1
+            return len(rule_name) == len(query_name):
+            #if rule[2][0] == "*":
+            #    rule_name = rule[2][1:].replace(".","")
+            #    rule_name = rule_name[::-1]
+            #    query_name = query[::-1]
+            #    print rule_name
+            #    print query_name
+            #    if rule_name == query_name[:len(rule_name)]:
+            #        print "MATCH"
+            #        return True
+            #    return False
+            #rule_name = rule[2].replace(".","")
+            #print len(rule_name.strip())
+            #print query.split('\x00')
+            #query_match = rule_name.strip() == query.strip() #For some reason, this is false!
+            #print str(query_match)
+            #if query_match:
+            #    print "MATCH"
+            #    return True
+            #return False
 
         else:
             if pkt_protocol==17:
