@@ -16,8 +16,6 @@ class Firewall:
         self.iface_ext = iface_ext
 
         # TODO: Load the firewall rules (from rule_filename) here.
-        print 'I am supposed to load rules from %s, but I am feeling lazy.' % \
-                config['rule']
         
         f=open(config['rule'],'r')
         rules=f.readlines()
@@ -71,13 +69,23 @@ class Firewall:
             if self.packet_matches_rule(pkt,pkt_dir,rule):
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
-                    print "--------------pass pkt-------------"
                 elif rule[0]=="drop":
-                    print "Dropped packet according to rule:", rule 
+                    print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 return
-       
-        print "----passing since no rules-----"
+
         self.pass_packet(pkt,pkt_dir)
+
+    def eval_pkt(self,pkt):
+        pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
+        src_ip=socket.inet_ntoa(pkt[12:16])
+        dest_ip=socket.inet_ntoa(pkt[16:20])
+
+        protocol_pkt=self.strip_ip(pkt)
+
+        src_port=struct.unpack('!H',protocol_pkt[0:2])[0]
+        dest_port=struct.unpack('!H',protocol_pkt[2:4])[0]
+
+        return "Packet:"+src_ip+":"+str(src_port)+" --> "+dest_ip+":"+str(dest_port)+ " w/protocol "+str(pkt_protocol)
 
 
     def pass_packet(self,pkt, pkt_dir):
@@ -85,12 +93,14 @@ class Firewall:
             self.iface_int.send_ip_packet(pkt)
         elif pkt_dir==PKT_DIR_OUTGOING:
             self.iface_ext.send_ip_packet(pkt)
- 
+
     # TODO: You can add more methods as you want.
 
     def packet_matches_rule(self,pkt,pkt_dir,rule):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
+        rule=[i.lower() for i in rule]
+
         rule_protocol=rule[1]
 
         udp_pkt = self.strip_ip(pkt)
@@ -132,20 +142,47 @@ class Firewall:
 
             src_ip=pkt[12:16]
             dst_ip=pkt[16:20]
+            #pdb.set_trace()
 
-            if rule[2]!="any":
-                if len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
+            if rule[2]!="any":   # ip address
+                if pkt_dir == PKT_DIR_OUTGOING:
+                    ip = dst_ip
+                else:
+                    ip = src_ip
+                if "/" in rule[2]:
+                    ip_prefix=rule[2].split("/")
+                    mask= (pow(2,int(ip_prefix[1]))-1)<<(32-int(ip_prefix[1]))
+                    if struct.unpack('!L',socket.inet_aton(ip_prefix[0]))[0]&mask!=struct.unpack('!L',ip)[0]&mask:
+                        return False
+                elif len(rule[2])==2 and rule[2]!=self.country_for_ip(ip):
                     return False
-                elif rule[2]!=socket.inet_ntoa(src_ip):
+                elif rule[2]!=socket.inet_ntoa(ip):
                     return False
 
             protocol_pkt=self.strip_ip(pkt)
 
-            src_port=protocol_pkt[0:2]
-            dest_port=protocol_pkt[2:4]
+            src_port=struct.unpack('!H',protocol_pkt[0:2])[0]
+            if pkt_protocol=="icmp":
+                src_port=struct.unpack('!B',protocol_pkt[0])[0]
 
-            if rule[3]!=src_port:
-                return False
+            dest_port=struct.unpack('!H',protocol_pkt[2:4])[0]
+            if pkt_dir == PKT_DIR_OUTGOING:
+                port = dest_port
+            else:
+                port = src_port
+
+            if rule[3]!="any":
+                #pdb.set_trace()
+                if "-" in rule[3]: #port range
+                    port_range=rule[3].split("-")
+                    if port_range[0]<=port and port<port_range[1]: #should be inclusive
+                        return True
+                    else:
+                        return False
+                if int(rule[3])!=port:  # port
+                    return False
+
+            return True
 
     def strip_ip(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
