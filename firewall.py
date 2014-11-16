@@ -150,9 +150,7 @@ class Firewall:
             return True
         else:
             #Michael's code here
-
-
-
+            return False
 
     def strip_ip(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
