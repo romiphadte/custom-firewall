@@ -64,18 +64,20 @@ class Firewall:
         # TODO: Your main firewall code will be here.
 
         if self.should_ignore_packet(pkt):
-            pass_packet(pkt,pkt_dir)
+            self.pass_packet(pkt,pkt_dir)
             return
 
         for rule in self.rules:
             if self.packet_matches_rule(pkt,rule):
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
-                    print "pass pkt"
+                    print "--------------pass pkt-------------"
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule 
-                break;
-
+                return
+       
+        print "----passing since no rules-----"
+        self.pass_packet(pkt,pkt_dir)
 
 
     def pass_packet(self,pkt, pkt_dir):
@@ -87,6 +89,7 @@ class Firewall:
     # TODO: You can add more methods as you want.
 
     def packet_matches_rule(self,pkt,rule):
+        print "checking", rule
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
         rule_protocol=rule[1]
@@ -120,7 +123,7 @@ class Firewall:
                 return False
 
     def strip_ip(self,pkt):
-        ip_header_len=(struct.unpack('!B',pkt[0:1])&0xF)*4
+        ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         return pkt[ip_header_len:] 
 
     def should_ignore_packet(self,pkt):
