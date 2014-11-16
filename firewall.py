@@ -24,7 +24,6 @@ class Firewall:
         
         rules=[rule.strip("\n") for rule in rules]
         rules=[rule.split() for rule in rules]
-        print rules
         rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="pass" or rule[0]=="drop")]
         rules=rules[::-1]
        
@@ -96,25 +95,31 @@ class Firewall:
 
         udp_pkt = self.strip_ip(pkt)
         #print str(pkt_dir) + "?" + str(PKT_DIR_OUTGOING) + "," + str(struct.unpack('!BB',udp_pkt[0:2])[1])
-        proto_match = rule_protocol=="dns"
+        dns_proto = rule_protocol=="dns"
         is_outgoing = int(pkt_dir)==PKT_DIR_OUTGOING
         correct_port = struct.unpack('!BB',udp_pkt[2:4])[1] == 53
-        #print str(proto_match) + "," + str(is_outgoing) + "," + str(correct_port)
-        if proto_match and is_outgoing and correct_port:
+        #print str(dns_proto) + "," + str(is_outgoing) + "," + str(correct_port)
+        if dns_proto and is_outgoing and correct_port:
             dns_pkt = udp_pkt[8:]
             query = dns_pkt[12:]
-            rule_name = re.split("\W+", rule[2])[::-1]
-            query_name = re.split("\W+", query.split("\x00"))[::-1]
-            query_type = query.split("\x00")[-2]
-            query_class = query.split("\x00")[-1]
-            i = 0
-            while i < len(rule_name) and i < len(query_name):
-                if rule_name[i] == "*":
-                    return True
-                if rule_name[i] != query_name[i]:
-                    return False
-                i += 1
-            return len(rule_name) == len(query_name):
+            rule_name = re.split("\.", rule[2])[::-1]
+            query_name = query.split("\x00")[0]
+            query_name = re.split("\W+", query_name)[::-1]
+            query_name = [q for q in query_name if q != '']
+            query_type = re.split("\x00*", query)[1]
+            query_class = re.split("\x00*", query)[2]
+            class_match = ord(query_class)==1
+            type_match = (ord(query_type) == 1 or ord(query_type) == 28)
+            if class_match and type_match:
+                i = 0
+                while i < len(rule_name) and i < len(query_name):
+                    if rule_name[i] == "*":
+                        return True
+                    if rule_name[i] != query_name[i]:
+                        return False
+                    i += 1
+                return len(rule_name) == len(query_name)
+            return False
             #if rule[2][0] == "*":
             #    rule_name = rule[2][1:].replace(".","")
             #    rule_name = rule_name[::-1]
