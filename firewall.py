@@ -92,7 +92,7 @@ class Firewall:
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         rule_protocol=rule[1]
         
-        if rule[1]!="dns"     
+        if rule[1]!="dns":
             if pkt_protocol==17:
                 pkt_protocol="udp"
             elif pkt_protocol==6:
@@ -113,9 +113,6 @@ class Firewall:
                     return False
 
 
-            if rule[3]!=""
-
-
             ipid=struct.unpack('!H',pkt[4:6])
             country=self.country_for_ip(src_ip)
 
@@ -127,7 +124,7 @@ class Firewall:
         return True
 
     def strip_ip(self,pkt):
-        pritnt pkt[0:1]
+        print pkt[0:1]
         pdb.set_trace()
 
     def should_ignore_packet(self,pkt):
