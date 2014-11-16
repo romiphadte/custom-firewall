@@ -32,7 +32,7 @@ class Firewall:
         f=open('geoipdb.txt','r')
         ip_ranges=f.readlines()
         
-        ip_ranges=[ip_range.strip("\n") for ip_range in ip_ranges]
+        ip_ranges=[ip_range.strip("\n").lower() for ip_range in ip_ranges]
         ip_ranges=[ip_range.split(" ") for ip_range in ip_ranges]
         self.ip_ranges=ip_ranges
 
@@ -103,8 +103,7 @@ class Firewall:
 
         rule_protocol=rule[1]
 
-
-        if rule[1]!="dns":
+        if rule[1]!="dns":                                  #protocol
             if pkt_protocol==17:
                 pkt_protocol="udp"
             elif pkt_protocol==6:
@@ -118,7 +117,7 @@ class Firewall:
             src_ip=pkt[12:16]
             dst_ip=pkt[16:20]
 
-            if rule[2]!="any":   # ip address
+            if rule[2]!="any":                              # ip address
                 if "/" in rule[2]:
                     ip_prefix=rule[2].split("/")
                     mask= (pow(2,int(ip_prefix[1]))-1)<<(32-int(ip_prefix[1]))
@@ -126,7 +125,7 @@ class Firewall:
                         return False
                 elif len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
                     return False
-                elif rule[2]!=socket.inet_ntoa(src_ip):
+                elif len(rule[2])!=2 and rule[2]!=socket.inet_ntoa(src_ip):
                     return False
 
             protocol_pkt=self.strip_ip(pkt)
@@ -137,19 +136,19 @@ class Firewall:
 
             dest_port=struct.unpack('!H',protocol_pkt[2:4])[0]
 
-            if rule[3]!="any":
+            if rule[3]!="any":                             # port
                 if "-" in rule[3]: #port range
                     port_range=rule[3].split("-")
-                    if port_range[0]<=src_port and src_port<port_range[1]:
+                    if int(port_range[0])<=src_port and src_port<=int(port_range[1]):
                         return True
                     else:
                         return False
-                if rule[3]!=src_port:  # port
+                if rule[3]!=str(src_port):   
                     return False
 
             return True
-        else:
-            #Michael's code here
+        else:                                               #DNS
+            #MICHAEL PUT YOUR GOD DAMN CODE HERE hehe
             return False
 
     def strip_ip(self,pkt):
