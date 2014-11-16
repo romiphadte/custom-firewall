@@ -113,8 +113,11 @@ class Firewall:
             if rule[2]!="any":   # ip address
                 if "/" in rule[2]:
                     ip_prefix=rule[2].split("/")
-                    if ip_prefix[0][:ip_prefix[1]]!=socket.inet_ntoa(src_ip)[:ip_prefix[1]]:
+                    mask= (pow(2,ip_prefix[1])-1)<<(32-ip_prefix[1])
+                    if socket.inet_aton(ip_prefix[0])&(mask)!=src_ip&mask:
+                        print "masked ip didn't match"
                         return False
+
                 elif len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
                     return False
                 elif rule[2]!=socket.inet_ntoa(src_ip):
