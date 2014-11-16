@@ -124,8 +124,8 @@ class Firewall:
         return True
 
     def strip_ip(self,pkt):
-        print struct.unpack('!B',pkt[0:1])|0xF
-        pdb.set_trace()
+        ip_header_len=(struct.unpack('!B',pkt[0:1])&0xF)*4
+        return pkt[ip_header_len:] 
 
     def should_ignore_packet(self,pkt):
         protocol=struct.unpack('!B',pkt[9:10])[0]
