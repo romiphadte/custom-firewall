@@ -64,9 +64,18 @@ class Firewall:
         if self.should_ignore_packet(pkt):
             self.pass_packet(pkt,pkt_dir)
             return
+        
+        ip=""
+        src_ip=pkt[12:16]
+        dst_ip=pkt[16:20]
+        if pkt_dir == PKT_DIR_OUTGOING:
+            ip = dst_ip
+        else:
+            ip = src_ip
 
+        country=self.country_for_ip(ip)
         for rule in self.rules:
-            if self.packet_matches_rule(pkt,pkt_dir,rule):
+            if self.packet_matches_rule(pkt,pkt_dir,rule,country):
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
                 elif rule[0]=="drop":
@@ -96,7 +105,7 @@ class Firewall:
 
     # TODO: You can add more methods as you want.
 
-    def packet_matches_rule(self,pkt,pkt_dir,rule):
+    def packet_matches_rule(self,pkt,pkt_dir,rule,country):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
 
@@ -153,7 +162,7 @@ class Firewall:
                     mask= (pow(2,int(ip_prefix[1]))-1)<<(32-int(ip_prefix[1]))
                     if struct.unpack('!L',socket.inet_aton(ip_prefix[0]))[0]&mask!=struct.unpack('!L',ip)[0]&mask:
                         return False
-                elif len(rule[2])==2 and rule[2]!=self.country_for_ip(ip):
+                elif len(rule[2])==2 and rule[2]!=country:
                     return False
                 elif len(rule[2])!=2 and rule[2]!=socket.inet_ntoa(src_ip):
                     return False
@@ -173,11 +182,11 @@ class Firewall:
             if rule[3]!="any":                             # port
                 if "-" in rule[3]: #port range
                     port_range=rule[3].split("-")
-                    if int(port_range[0])<=src_port and src_port<=int(port_range[1]):
+                    if int(port_range[0])<=port and port<=int(port_range[1]):
                         return True
                     else:
                         return False
-                if rule[3]!=str(src_port):   
+                if rule[3]!=str(port):   
                     return False
 
             return True
