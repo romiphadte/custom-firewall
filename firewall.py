@@ -122,13 +122,13 @@ class Firewall:
 
             protocol_pkt=self.strip_ip(pkt)
 
-            src_port=struct.unpack('!H',socket.ntohs(protocol_pkt[0:2]))[0]
+            src_port=struct.unpack('!H',protocol_pkt[0:2])[0]
             if pkt_protocol=="icmp":
                 src_port=struct.unpack('!B',protocol_pkt[0])[0]
 
-            dest_port=struct.unpack('!H',socket.ntohs(protocol_pkt[2:4]))[0]
+            dest_port=struct.unpack('!H',protocol_pkt[2:4])[0]
 
-            if rule[3]!="any"
+            if rule[3]!="any":
                 if "-" in rule[3]: #port range
                     port_range=rule[3].split("-")
                     if port_range[0]<=src_port and src_port<port_range[1]:
