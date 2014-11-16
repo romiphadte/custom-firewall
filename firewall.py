@@ -94,11 +94,9 @@ class Firewall:
         rule_protocol=rule[1]
 
         udp_pkt = self.strip_ip(pkt)
-        #print str(pkt_dir) + "?" + str(PKT_DIR_OUTGOING) + "," + str(struct.unpack('!BB',udp_pkt[0:2])[1])
         dns_proto = rule_protocol=="dns"
         is_outgoing = int(pkt_dir)==PKT_DIR_OUTGOING
         correct_port = struct.unpack('!BB',udp_pkt[2:4])[1] == 53
-        #print str(dns_proto) + "," + str(is_outgoing) + "," + str(correct_port)
         if dns_proto and is_outgoing and correct_port:
             dns_pkt = udp_pkt[8:]
             query = dns_pkt[12:]
@@ -120,25 +118,6 @@ class Firewall:
                     i += 1
                 return len(rule_name) == len(query_name)
             return False
-            #if rule[2][0] == "*":
-            #    rule_name = rule[2][1:].replace(".","")
-            #    rule_name = rule_name[::-1]
-            #    query_name = query[::-1]
-            #    print rule_name
-            #    print query_name
-            #    if rule_name == query_name[:len(rule_name)]:
-            #        print "MATCH"
-            #        return True
-            #    return False
-            #rule_name = rule[2].replace(".","")
-            #print len(rule_name.strip())
-            #print query.split('\x00')
-            #query_match = rule_name.strip() == query.strip() #For some reason, this is false!
-            #print str(query_match)
-            #if query_match:
-            #    print "MATCH"
-            #    return True
-            #return False
 
         else:
             if pkt_protocol==17:
