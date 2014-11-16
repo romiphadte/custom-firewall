@@ -63,6 +63,8 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
 
+        self.strip_ip(pkt)
+
         if self.should_ignore_packet(pkt):
             pass_packet(pkt,pkt_dir)
             return
@@ -89,27 +91,44 @@ class Firewall:
     def packet_matches_rule(self,pkt,rule):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         rule_protocol=rule[1]
-            
-        if pkt_protocol==17:
-            pkt_protocol="udp"
-        elif pkt_protocol==6:
-            pkt_protocol="tcp"
-        elif pkt_protocol==1:
-            pkt_protocol="icmp"
+        
+        if rule[1]!="dns"     
+            if pkt_protocol==17:
+                pkt_protocol="udp"
+            elif pkt_protocol==6:
+                pkt_protocol="tcp"
+            elif pkt_protocol==1:
+                pkt_protocol="icmp"
 
-        if pkt_protocol!=rule_protocol:
-            return False
+            if pkt_protocol!=rule_protocol:
+                return False
 
-        src_ip=pkt[12:16]
-        dst_ip=pkt[16:20]
+            src_ip=pkt[12:16]
+            dst_ip=pkt[16:20]
 
-        ipid=struct.unpack('!H',pkt[4:6])
-        country=self.country_for_ip(src_ip)
+            if rule[2]!="any":
+                if len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
+                    return False
+                elif rule[2]!=socket.inet_ntoa(src_ip):
+                    return False
+
+
+            if rule[3]!=""
+
+
+            ipid=struct.unpack('!H',pkt[4:6])
+            country=self.country_for_ip(src_ip)
+
+
         if country is not None:
             print "This packet came from ", country
         else:
             print "country not found"
         return True
+
+    def strip_ip(self,pkt):
+        pritnt pkt[0:1]
+        pdb.set_trace()
 
     def should_ignore_packet(self,pkt):
         protocol=struct.unpack('!B',pkt[9:10])[0]
