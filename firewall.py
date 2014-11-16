@@ -91,8 +91,11 @@ class Firewall:
     def packet_matches_rule(self,pkt,rule):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
+        rule=[i.lower() for i in rule]
+
         rule_protocol=rule[1]
-        
+
+
         if rule[1]!="dns":
             if pkt_protocol==17:
                 pkt_protocol="udp"
@@ -107,19 +110,35 @@ class Firewall:
             src_ip=pkt[12:16]
             dst_ip=pkt[16:20]
 
-            if rule[2]!="any":
-                if len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
+            if rule[2]!="any":   # ip address
+                if "/" in rule[2]:
+                    ip_prefix=rule[2].split("/")
+                    if ip_prefix[0][:ip_prefix[1]]!=socket.inet_ntoa(src_ip)[:ip_prefix[1]]:
+                        return False
+                elif len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
                     return False
                 elif rule[2]!=socket.inet_ntoa(src_ip):
                     return False
 
             protocol_pkt=self.strip_ip(pkt)
 
-            src_port=protocol_pkt[0:2]
-            dest_port=protocol_pkt[2:4]
+            src_port=struct.unpack('!H',socket.ntohs(protocol_pkt[0:2]))[0]
+            if pkt_protocol=="icmp":
+                src_port=struct.unpack('!B',protocol_pkt[0])[0]
 
-            if rule[3]!=src_port:
-                return False
+            dest_port=struct.unpack('!H',socket.ntohs(protocol_pkt[2:4]))[0]
+
+            if rule[3]!="any"
+                if "-" in rule[3]: #port range
+                    port_range=rule[3].split("-")
+                    if port_range[0]<=src_port and src_port<port_range[1]:
+                        return True
+                    else:
+                        return False
+                if rule[3]!=src_port:  # port
+                    return False
+
+
 
     def strip_ip(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
