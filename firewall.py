@@ -4,6 +4,7 @@ from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 import pdb
 import struct
 import socket
+import re
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -19,9 +20,9 @@ class Firewall:
         f=open(config['rule'],'r')
         rules=f.readlines()
         
-        rules=[rule.strip("\n") for rule in rules]
-        rules=[rule.split(" ") for rule in rules]
-        rules=[rule for rule in rules if rule[0]=="pass" or rule[0]=="drop"]
+        rules=[rule.strip("\n").lower() for rule in rules]
+        rules=[rule.split() for rule in rules]
+        rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="pass" or rule[0]=="drop")]
         rules=rules[::-1]
        
         self.rules=rules #cleaned set of all rules that are in reverse priority
@@ -37,8 +38,6 @@ class Firewall:
         self.ip_ranges=ip_ranges
 
 
-    # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
-    # @pkt: the actual data of the IPv4 packet (including IP header)
     def country_for_ip(self,ip): #expecting ip string
         ip_min=0
         ip_max=len(self.ip_ranges) 
@@ -57,7 +56,8 @@ class Firewall:
                 ip_max=index
 
 
-
+    # @pkt_dir: either PKT_DIR_INCOMING or PKT_DIR_OUTGOING
+    # @pkt: the actual data of the IPv4 packet (including IP header)
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
 
@@ -66,20 +66,20 @@ class Firewall:
             return
 
         for rule in self.rules:
-            if self.packet_matches_rule(pkt,rule):
+            if self.packet_matches_rule(pkt,pkt_dir,rule):
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 return
-       
+
         self.pass_packet(pkt,pkt_dir)
 
     def eval_pkt(self,pkt):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         src_ip=socket.inet_ntoa(pkt[12:16])
         dest_ip=socket.inet_ntoa(pkt[16:20])
-        
+
         protocol_pkt=self.strip_ip(pkt)
 
         src_port=struct.unpack('!H',protocol_pkt[0:2])[0]
@@ -93,17 +93,42 @@ class Firewall:
             self.iface_int.send_ip_packet(pkt)
         elif pkt_dir==PKT_DIR_OUTGOING:
             self.iface_ext.send_ip_packet(pkt)
- 
+
     # TODO: You can add more methods as you want.
 
-    def packet_matches_rule(self,pkt,rule):
+    def packet_matches_rule(self,pkt,pkt_dir,rule):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
-        rule=[i.lower() for i in rule]
 
         rule_protocol=rule[1]
 
-        if rule[1]!="dns":                                  #protocol
+        udp_pkt = self.strip_ip(pkt)
+        dns_proto = rule_protocol=="dns"
+        is_outgoing = int(pkt_dir)==PKT_DIR_OUTGOING
+        correct_port = struct.unpack('!BB',udp_pkt[2:4])[1] == 53
+        if dns_proto and is_outgoing and correct_port:
+            dns_pkt = udp_pkt[8:]
+            query = dns_pkt[12:]
+            rule_name = re.split("\.", rule[2])[::-1]
+            query_name = query.split("\x00")[0]
+            query_name = re.split("\W+", query_name)[::-1]
+            query_name = [q for q in query_name if q != '']
+            query_type = re.split("\x00*", query)[1]
+            query_class = re.split("\x00*", query)[2]
+            class_match = ord(query_class)==1
+            type_match = (ord(query_type) == 1 or ord(query_type) == 28)
+            if class_match and type_match:
+                i = 0
+                while i < len(rule_name) and i < len(query_name):
+                    if rule_name[i] == "*":
+                        return True
+                    if rule_name[i] != query_name[i]:
+                        return False
+                    i += 1
+                return len(rule_name) == len(query_name)
+            return False
+
+        else:
             if pkt_protocol==17:
                 pkt_protocol="udp"
             elif pkt_protocol==6:
@@ -116,14 +141,19 @@ class Firewall:
 
             src_ip=pkt[12:16]
             dst_ip=pkt[16:20]
+            #pdb.set_trace()
 
-            if rule[2]!="any":                              # ip address
+            if rule[2]!="any":   # ip address
+                if pkt_dir == PKT_DIR_OUTGOING:
+                    ip = dst_ip
+                else:
+                    ip = src_ip
                 if "/" in rule[2]:
                     ip_prefix=rule[2].split("/")
                     mask= (pow(2,int(ip_prefix[1]))-1)<<(32-int(ip_prefix[1]))
-                    if struct.unpack('!L',socket.inet_aton(ip_prefix[0]))[0]&mask!=struct.unpack('!L',src_ip)[0]&mask:
+                    if struct.unpack('!L',socket.inet_aton(ip_prefix[0]))[0]&mask!=struct.unpack('!L',ip)[0]&mask:
                         return False
-                elif len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
+                elif len(rule[2])==2 and rule[2]!=self.country_for_ip(ip):
                     return False
                 elif len(rule[2])!=2 and rule[2]!=socket.inet_ntoa(src_ip):
                     return False
@@ -135,6 +165,10 @@ class Firewall:
                 src_port=struct.unpack('!B',protocol_pkt[0])[0]
 
             dest_port=struct.unpack('!H',protocol_pkt[2:4])[0]
+            if pkt_dir == PKT_DIR_OUTGOING:
+                port = dest_port
+            else:
+                port = src_port
 
             if rule[3]!="any":                             # port
                 if "-" in rule[3]: #port range
@@ -147,9 +181,6 @@ class Firewall:
                     return False
 
             return True
-        else:                                               #DNS
-            #MICHAEL PUT YOUR GOD DAMN CODE HERE hehe
-            return False
 
     def strip_ip(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
