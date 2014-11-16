@@ -3,6 +3,7 @@
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 import pdb
 import struct
+import socket
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -48,16 +49,14 @@ class Firewall:
             index=(ip_min+ip_max)/2
             r=self.ip_ranges[index]
 
-            if socket.aton(r[0])<=ip and ip<=socket.aton(r[1]): #in range
+            if socket.inet_aton(r[0])<=ip and ip<=socket.inet_aton(r[1]): #in range
                 return r[2]
-            elif socket.aton(r[1])<ip:
-                ip_min=index
-
-            elif socket.aton(r[0])>ip:
-                ip_max=index
-
-            if ip_max==ip_min:
+            elif ip_max==index or ip_min==index:
                 return None
+            elif socket.inet_aton(r[1])<ip:
+                ip_min=index
+            elif socket.inet_aton(r[0])>ip:
+                ip_max=index
 
 
 
@@ -90,7 +89,7 @@ class Firewall:
     def packet_matches_rule(self,pkt,rule):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         rule_protocol=rule[1]
-        
+            
         if pkt_protocol==17:
             pkt_protocol="udp"
         elif pkt_protocol==6:
@@ -105,11 +104,11 @@ class Firewall:
         dst_ip=pkt[16:20]
 
         ipid=struct.unpack('!H',pkt[4:6])
-
         country=self.country_for_ip(src_ip)
         if country is not None:
             print "This packet came from ", country
-
+        else:
+            print "country not found"
         return True
 
     def should_ignore_packet(self,pkt):
