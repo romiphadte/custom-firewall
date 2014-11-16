@@ -15,8 +15,6 @@ class Firewall:
         self.iface_ext = iface_ext
 
         # TODO: Load the firewall rules (from rule_filename) here.
-        print 'I am supposed to load rules from %s, but I am feeling lazy.' % \
-                config['rule']
         
         f=open(config['rule'],'r')
         rules=f.readlines()
@@ -71,13 +69,23 @@ class Firewall:
             if self.packet_matches_rule(pkt,rule):
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
-                    print "--------------pass pkt-------------"
                 elif rule[0]=="drop":
-                    print "Dropped packet according to rule:", rule 
+                    print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 return
        
-        print "----passing since no rules-----"
         self.pass_packet(pkt,pkt_dir)
+
+    def eval_pkt(self,pkt):
+        pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
+        src_ip=socket.inet_ntoa(pkt[12:16])
+        dest_ip=socket.inet_ntoa(pkt[16:20])
+        
+        protocol_pkt=self.strip_ip(pkt)
+
+        src_port=struct.unpack('!H',protocol_pkt[0:2])[0]
+        dest_port=struct.unpack('!H',protocol_pkt[2:4])[0]
+
+        return "Packet:"+src_ip+":"+str(src_port)+" --> "+dest_ip+":"+str(dest_port)+ " w/protocol "+str(pkt_protocol)
 
 
     def pass_packet(self,pkt, pkt_dir):
@@ -113,11 +121,9 @@ class Firewall:
             if rule[2]!="any":   # ip address
                 if "/" in rule[2]:
                     ip_prefix=rule[2].split("/")
-                    mask= (pow(2,ip_prefix[1])-1)<<(32-ip_prefix[1])
-                    if socket.inet_aton(ip_prefix[0])&(mask)!=src_ip&mask:
-                        print "masked ip didn't match"
+                    mask= (pow(2,int(ip_prefix[1]))-1)<<(32-int(ip_prefix[1]))
+                    if struct.unpack('!L',socket.inet_aton(ip_prefix[0]))[0]&mask!=struct.unpack('!L',src_ip)[0]&mask:
                         return False
-
                 elif len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
                     return False
                 elif rule[2]!=socket.inet_ntoa(src_ip):
@@ -140,6 +146,8 @@ class Firewall:
                         return False
                 if rule[3]!=src_port:  # port
                     return False
+
+            return True        
 
 
 
