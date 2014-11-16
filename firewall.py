@@ -147,7 +147,10 @@ class Firewall:
                 if rule[3]!=src_port:  # port
                     return False
 
-            return True        
+            return True
+        else:
+            #Michael's code here
+
 
 
 
