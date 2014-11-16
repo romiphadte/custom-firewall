@@ -89,7 +89,6 @@ class Firewall:
     # TODO: You can add more methods as you want.
 
     def packet_matches_rule(self,pkt,rule):
-        print "checking", rule
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
         rule_protocol=rule[1]
