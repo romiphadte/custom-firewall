@@ -63,8 +63,6 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
 
-        self.strip_ip(pkt)
-
         if self.should_ignore_packet(pkt):
             pass_packet(pkt,pkt_dir)
             return
@@ -90,6 +88,7 @@ class Firewall:
 
     def packet_matches_rule(self,pkt,rule):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
+        ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
         rule_protocol=rule[1]
         
         if rule[1]!="dns":
@@ -112,16 +111,13 @@ class Firewall:
                 elif rule[2]!=socket.inet_ntoa(src_ip):
                     return False
 
+            protocol_pkt=self.strip_ip(pkt)
 
-            ipid=struct.unpack('!H',pkt[4:6])
-            country=self.country_for_ip(src_ip)
+            src_port=protocol_pkt[0:2]
+            dest_port=protocol_pkt[2:4]
 
-
-        if country is not None:
-            print "This packet came from ", country
-        else:
-            print "country not found"
-        return True
+            if rule[3]!=src_port:
+                return False
 
     def strip_ip(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])&0xF)*4
