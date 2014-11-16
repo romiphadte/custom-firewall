@@ -92,12 +92,12 @@ class Firewall:
         ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
         rule_protocol=rule[1]
 
-        ip_header_len = struct.unpack('!B',pkt[0:1]) & 0xF
-        udp_pkt = pkt[ip_header_len:]
+        udp_pkt = self.strip_ip(pkt)
 
-        if rule_protocol=="dns"
-                and pkt_dir==PKT_DIR_OUTGOING
-                and struct.unpack('!B',udp_pkt[0:2]) == 53:
+        if rule_protocol=="dns"\
+                and pkt_dir==PKT_DIR_OUTGOING\
+                and struct.unpack('!BB',udp_pkt[0:2]) == 53:
+            print "dns packet"
             dns_pkt = udp_pkt[8:]
             query = dns_pkt[12:].rstrip()
             if rule[3][0] == "*":
@@ -113,10 +113,13 @@ class Firewall:
         else:
             if pkt_protocol==17:
                 pkt_protocol="udp"
+                print "udp packet"
             elif pkt_protocol==6:
                 pkt_protocol="tcp"
+                print "tcp packet"
             elif pkt_protocol==1:
                 pkt_protocol="icmp"
+                print "icmp packet"
 
             if pkt_protocol!=rule_protocol:
                 return False
