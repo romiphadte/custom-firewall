@@ -63,18 +63,20 @@ class Firewall:
         # TODO: Your main firewall code will be here.
 
         if self.should_ignore_packet(pkt):
-            pass_packet(pkt,pkt_dir)
+            self.pass_packet(pkt,pkt_dir)
             return
 
         for rule in self.rules:
             if self.packet_matches_rule(pkt,pkt_dir,rule):
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
-                    print "pass pkt"
+                    print "--------------pass pkt-------------"
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule 
-                break;
-
+                return
+       
+        print "----passing since no rules-----"
+        self.pass_packet(pkt,pkt_dir)
 
 
     def pass_packet(self,pkt, pkt_dir):
@@ -87,17 +89,8 @@ class Firewall:
 
     def packet_matches_rule(self,pkt,pkt_dir,rule):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
+        ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
         rule_protocol=rule[1]
-            
-        if pkt_protocol==17:
-            pkt_protocol="udp"
-        elif pkt_protocol==6:
-            pkt_protocol="tcp"
-        elif pkt_protocol==1:
-            pkt_protocol="icmp"
-
-        if pkt_protocol!=rule_protocol:
-            return False
 
         ip_header_len = struct.unpack('!B',pkt[0:1]) & 0xF
         udp_pkt = pkt[ip_header_len:]
@@ -117,16 +110,37 @@ class Firewall:
                 return True
             return False
 
-        src_ip=pkt[12:16]
-        dst_ip=pkt[16:20]
-
-        ipid=struct.unpack('!H',pkt[4:6])
-        country=self.country_for_ip(src_ip)
-        if country is not None:
-            print "This packet came from ", country
         else:
-            print "country not found"
-        return True
+            if pkt_protocol==17:
+                pkt_protocol="udp"
+            elif pkt_protocol==6:
+                pkt_protocol="tcp"
+            elif pkt_protocol==1:
+                pkt_protocol="icmp"
+
+            if pkt_protocol!=rule_protocol:
+                return False
+
+            src_ip=pkt[12:16]
+            dst_ip=pkt[16:20]
+
+            if rule[2]!="any":
+                if len(rule[2])==2 and rule[2]!=self.country_for_ip(src_ip):
+                    return False
+                elif rule[2]!=socket.inet_ntoa(src_ip):
+                    return False
+
+            protocol_pkt=self.strip_ip(pkt)
+
+            src_port=protocol_pkt[0:2]
+            dest_port=protocol_pkt[2:4]
+
+            if rule[3]!=src_port:
+                return False
+
+    def strip_ip(self,pkt):
+        ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
+        return pkt[ip_header_len:] 
 
     def should_ignore_packet(self,pkt):
         protocol=struct.unpack('!B',pkt[9:10])[0]
