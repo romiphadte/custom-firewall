@@ -74,32 +74,13 @@ class Firewall:
             ip = src_ip
 
         country=self.country_for_ip(ip)
-        is_dns = self.dns_check(pkt)
-        dns_set = False
-        ip_set = False
         for rule in self.rules:
             if self.packet_matches_rule(pkt,pkt_dir,rule,country):
-                if is_dns:
-                    if rule[1]=="dns" and not dns_set:
-                        if rule[0]=="pass":
-                            dns_set = True
-                        elif rule[0]=="drop":
-                            print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
-                            return
-                    elif rule[1]!="dns" and not ip_set:
-                        if rule[0]=="pass":
-                            ip_set = True
-                        elif rule[0]=="drop":
-                            print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
-                            return
-                    if dns_set and ip_set:
-                        self.pass_packet(pkt,pkt_dir)
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 return
-
         self.pass_packet(pkt,pkt_dir)
 
 
@@ -128,26 +109,26 @@ class Firewall:
         if len(udp_pkt) >= 20:
             dns_pkt = udp_pkt[8:]
             query = dns_pkt[12:]
-            query_type = re.split("\x00*", query)[1]
-            query_class = re.split("\x00*", query)[2]
-            class_match = ord(query_class)==1
-            type_match = (ord(query_type) == 1 or ord(query_type) == 28)
-            is_outgoing = int(pkt_dir)==PKT_DIR_OUTGOING
-            port_match = struct.unpack('!BB',udp_pkt[2:4])[1] == 53
-            one_question = ord(query[4:6]) == 1
-            return class_match and type_match and is_outgoing and port_match and one_question
-        else:
-            return False
+            query_split = re.split("\x00*", query)
+            query_split = [q for q in query_split if q != ""]
+            if len(query_split) >= 3:
+                query_type = re.split("\x00*", query)[1]
+                query_class = re.split("\x00*", query)[2]
+                class_match = ord(query_class[0])==1
+                type_match = (ord(query_type[0]) == 1 or ord(query_type[0]) == 28)
+                is_outgoing = int(pkt_dir)==PKT_DIR_OUTGOING
+                port_match = struct.unpack('!BB',udp_pkt[2:4])[1] == 53
+                one_question = struct.unpack('!H',dns_pkt[4:6])[0] == 1
+                return class_match and type_match and is_outgoing and port_match and one_question
+        return False
 
     def packet_matches_rule(self,pkt,pkt_dir,rule,country):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         ipid=struct.unpack('!H',pkt[4:6])               #TODO: Do we need this?
-
         rule_protocol=rule[1]
-
         udp_pkt = self.strip_ip(pkt)
         dns_proto = rule_protocol=="dns"
-        if dns_proto
+        if dns_proto:
             if self.dns_check(pkt,pkt_dir):
                 dns_pkt = udp_pkt[8:]
                 query = dns_pkt[12:]
@@ -178,7 +159,6 @@ class Firewall:
 
             src_ip=pkt[12:16]
             dst_ip=pkt[16:20]
-            #pdb.set_trace()
 
             if rule[2]!="any":   # ip address
                 if pkt_dir == PKT_DIR_OUTGOING:
@@ -202,7 +182,7 @@ class Firewall:
                 src_port=struct.unpack('!B',protocol_pkt[0])[0]
 
             dest_port=struct.unpack('!H',protocol_pkt[2:4])[0]
-            if pkt_dir == PKT_DIR_OUTGOING:
+            if pkt_dir == PKT_DIR_OUTGOING and pkt_protocol!="icmp":
                 port = dest_port
             else:
                 port = src_port
