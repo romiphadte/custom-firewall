@@ -74,8 +74,26 @@ class Firewall:
             ip = src_ip
 
         country=self.country_for_ip(ip)
+        is_dns = self.dns_check(pkt)
+        dns_set = False
+        ip_set = False
         for rule in self.rules:
             if self.packet_matches_rule(pkt,pkt_dir,rule,country):
+                if is_dns:
+                    if rule[1]=="dns" and not dns_set:
+                        if rule[0]=="pass":
+                            dns_set = True
+                        elif rule[0]=="drop":
+                            print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
+                            return
+                    elif rule[1]!="dns" and not ip_set:
+                        if rule[0]=="pass":
+                            ip_set = True
+                        elif rule[0]=="drop":
+                            print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
+                            return
+                    if dns_set and ip_set:
+                        self.pass_packet(pkt,pkt_dir)
                 if rule[0]=="pass":
                     self.pass_packet(pkt,pkt_dir)
                 elif rule[0]=="drop":
@@ -83,6 +101,7 @@ class Firewall:
                 return
 
         self.pass_packet(pkt,pkt_dir)
+
 
     def eval_pkt(self,pkt):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
@@ -104,6 +123,21 @@ class Firewall:
             self.iface_ext.send_ip_packet(pkt)
 
     # TODO: You can add more methods as you want.
+    def dns_check(self,pkt,pkt_dir):
+        udp_pkt = self.strip_ip(pkt)
+        if len(udp_pkt) >= 20:
+            dns_pkt = udp_pkt[8:]
+            query = dns_pkt[12:]
+            query_type = re.split("\x00*", query)[1]
+            query_class = re.split("\x00*", query)[2]
+            class_match = ord(query_class)==1
+            type_match = (ord(query_type) == 1 or ord(query_type) == 28)
+            is_outgoing = int(pkt_dir)==PKT_DIR_OUTGOING
+            port_match = struct.unpack('!BB',udp_pkt[2:4])[1] == 53
+            one_question = ord(query[4:6]) == 1
+            return class_match and type_match and is_outgoing and port_match and one_question
+        else:
+            return False
 
     def packet_matches_rule(self,pkt,pkt_dir,rule,country):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
@@ -113,20 +147,14 @@ class Firewall:
 
         udp_pkt = self.strip_ip(pkt)
         dns_proto = rule_protocol=="dns"
-        is_outgoing = int(pkt_dir)==PKT_DIR_OUTGOING
-        correct_port = struct.unpack('!BB',udp_pkt[2:4])[1] == 53
-        if dns_proto and is_outgoing and correct_port:
-            dns_pkt = udp_pkt[8:]
-            query = dns_pkt[12:]
-            rule_name = re.split("\.", rule[2])[::-1]
-            query_name = query.split("\x00")[0]
-            query_name = re.split("\W+", query_name)[::-1]
-            query_name = [q for q in query_name if q != '']
-            query_type = re.split("\x00*", query)[1]
-            query_class = re.split("\x00*", query)[2]
-            class_match = ord(query_class)==1
-            type_match = (ord(query_type) == 1 or ord(query_type) == 28)
-            if class_match and type_match:
+        if dns_proto
+            if self.dns_check(pkt,pkt_dir):
+                dns_pkt = udp_pkt[8:]
+                query = dns_pkt[12:]
+                rule_name = re.split("\.", rule[2])[::-1]
+                query_name = query.split("\x00")[0]
+                query_name = re.split("\W+", query_name)[::-1]
+                query_name = [q for q in query_name if q != '']
                 i = 0
                 while i < len(rule_name) and i < len(query_name):
                     if rule_name[i] == "*":
@@ -164,7 +192,7 @@ class Firewall:
                         return False
                 elif len(rule[2])==2 and rule[2]!=country:
                     return False
-                elif len(rule[2])!=2 and rule[2]!=socket.inet_ntoa(src_ip):
+                elif len(rule[2])!=2 and rule[2]!=socket.inet_ntoa(ip):
                     return False
 
             protocol_pkt=self.strip_ip(pkt)
