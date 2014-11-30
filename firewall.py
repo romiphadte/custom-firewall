@@ -41,7 +41,8 @@ class Firewall:
     def country_for_ip(self,ip): #expecting ip string
         ip_min=0
         ip_max=len(self.ip_ranges) 
-
+        if ip_max==0:
+            return None
         while True:
             index=(ip_min+ip_max)/2
             r=self.ip_ranges[index]
@@ -61,11 +62,14 @@ class Firewall:
     def handle_packet(self, pkt_dir, pkt):
         # TODO: Your main firewall code will be here.
 
+        if len(pkt)<20:
+            return
+
         if self.should_ignore_packet(pkt):
             self.pass_packet(pkt,pkt_dir)
             return
         
-        if len(pkt)<28 or len(pkt)<8+(struct.unpack('!B',pkt[0:1])[0]&0xF)*4:
+        if len(pkt)<8+(struct.unpack('!B',pkt[0:1])[0]&0xF)*4:
             return
         ip=""
         src_ip=pkt[12:16]
