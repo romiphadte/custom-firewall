@@ -65,6 +65,8 @@ class Firewall:
             self.pass_packet(pkt,pkt_dir)
             return
         
+        if len(pkt)<28 or len(pkt)<8+(struct.unpack('!B',pkt[0:1])[0]&0xF)*4:
+            return
         ip=""
         src_ip=pkt[12:16]
         dst_ip=pkt[16:20]
