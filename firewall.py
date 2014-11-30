@@ -80,6 +80,8 @@ class Firewall:
                     self.pass_packet(pkt,pkt_dir)
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
+                elif rule[0]=="deny" and rule[1]=="dns":
+                    send_dns_response()
                 return
         self.pass_packet(pkt,pkt_dir)
 
@@ -103,6 +105,13 @@ class Firewall:
         elif pkt_dir==PKT_DIR_OUTGOING:
             self.iface_ext.send_ip_packet(pkt)
 
+    #sends a denial packet in the OPPOSITE direction pkt_dir
+    def send_deny_packet(self, pkt, pkt_dir):
+        if pkt_dir==PKT_DIR_INCOMING:
+            self.iface_ext.send_ip_packet(pkt)
+        elif pkt_dir==PKT_DIR_OUTGOING:
+            self.iface_int.send_ip_packet(pkt)
+
     # TODO: You can add more methods as you want.
     def dns_check(self,pkt,pkt_dir):
         udp_pkt = self.strip_ip(pkt)
@@ -121,6 +130,9 @@ class Firewall:
                 one_question = struct.unpack('!H',dns_pkt[4:6])[0] == 1
                 return class_match and type_match and is_outgoing and port_match and one_question
         return False
+
+    def send_dns_response(self):
+        pkt=
 
     def packet_matches_rule(self,pkt,pkt_dir,rule,country):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
