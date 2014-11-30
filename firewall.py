@@ -68,8 +68,8 @@ class Firewall:
         if self.should_ignore_packet(pkt):
             self.pass_packet(pkt,pkt_dir)
             return
-        
-        if len(pkt)<8+(struct.unpack('!B',pkt[0:1])[0]&0xF)*4:
+        ip_header_len,protocol=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4,struct.unpack('!B',pkt[9:10])[0]
+        if len(pkt)<8+ip_header_len or (protocol==17 and len(pkt)<20+ip_header_len)
             return
         ip=""
         src_ip=pkt[12:16]
