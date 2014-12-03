@@ -82,6 +82,8 @@ class Firewall:
                     print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 elif rule[0]=="deny" and rule[1]=="dns":
                     send_dns_response(pkt)
+                elif rule[0]=="deny" and rule[1]=="tcp":
+                    send_tcp_response(pkt)
                 return
         self.pass_packet(pkt,pkt_dir)
 
@@ -140,15 +142,48 @@ class Firewall:
         dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])|0x80)&0xf9)
         dns_header += struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
         dns_header += answer
-        udp_checksum = "yes" #TODO create checksum
-        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',),udp_checksum)
+        source_ip dest_ip protocol udp_len 
+        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',),udp_checksum(pkt))
         udp_header += dns_header
-        ip_checksum = checksum
         ip_header = struct.pack('!H',0x4500) + struct.pack('!H', 20) + pkt[4:6] + struct.pack('!H',0)
-        ip_header += struct.pack('!B',1) + struct.pack('!B',17) + ip_checksum + pkt[16:20] + pkt[12:16]
+        ip_header += struct.pack('!B',1) + struct.pack('!B',17) + ip_checksum(pkt) + pkt[16:20] + pkt[12:16]
         ip_header += dns_header
         self.send_deny_pkt(ip_header, pkt_dir)
 
+    def send_tcp_response(self,pkt,pkt_dir):
+        pkt=swap_ip(pkt)
+        tcp_pkt=strip_ip(pkt)
+        
+        new_tcp_pkt=tcp_pkt[2:4]+tcp_pkt[0:2]+struct.pack('!L',struct.unpack('!L',tcp_pkt[8:12])[0])+struct.pack('!L',struct.unpack('!L',tcp_pkt[4:8])[0]+1)+tcp_pkt[12]+0x04+tcp_pkt[14:16]+struct.pack('!L',0)+tcp_pkt[18:]
+
+        ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
+        new_pkt=pkt[:ip_header_len] + new_tcp_pkt
+        self.send_deny_pkt(new_pkt,pkt_dir)
+
+    def swap_ip(self,pkt):
+        ttl=struct.pack(!LL,255)
+        checksum=struct.pack()   #TODO
+
+        return pkt[:8]+ttl+pkt[9:12]+checksum+pkt[16:20]+pkt[12:16]+pkt[20:]
+
+    def udp_checksum(self,pkt):
+        udp_pkt=strip_ip(pkt)
+        return checksum(pkt[12:16]+pkt[16:20]+pkt[9:10]+udp_pkt[4:6]+udp_pkt[8:])
+
+    def ip_checksum(self,pkt):
+        ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
+        ip_header=pkt[:ip_header_len] 
+        ip_header=ip_header[:12]+struct.pack('!L'.0)+ip_header[16:]
+        return checksum(ip_header)
+
+    def checksum(self,s):
+        total=0
+        for i in len(s)/2:
+            total=total+struct.unpack('!H',ip_header[a*2:a*2+1])
+        while total>>16 not 0:
+            total= (total>>16) + total&0xff
+
+        return ~total
 
     def packet_matches_rule(self,pkt,pkt_dir,rule,country):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
