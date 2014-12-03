@@ -137,26 +137,26 @@ class Firewall:
 
     def read_qname(self, dns_pkt):
         next_len = 12
-        length = struct.unpack('!B', dns_pkt[next_len])
+        length = struct.unpack('!B', dns_pkt[next_len])[0]
         while length != 0:
             next_len += length + 1
-            length = struct.unpack('!B', dns_pkt[next_len])
+            length = struct.unpack('!B', dns_pkt[next_len])[0]
         return dns_pkt[12:next_len + 1]
 
     def send_dns_response(self, pkt, pkt_dir):
         udp_pkt = self.strip_ip(pkt)
         dns_pkt = udp_pkt[8:]
-        qname = read_qname(dns_pkt)
+        qname = self.read_qname(dns_pkt)
         answer = qname + struct.pack('!H', 1)
         answer += struct.pack('!H', 1) + struct.pack('!L', 1) + struct.pack('!H', 4)
         answer += struct.pack('!B', 54) + struct.pack('!B', 173) + struct.pack('!B', 224) + struct.pack('!B', 150)
-        dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])|0x80)&0xf9)
+        dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])[0]|0x80)&0xf9)
         dns_header += struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
         dns_header += answer
-        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',len(dns_header)),udp_checksum(pkt))
+        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',len(dns_header)),self.udp_checksum(pkt))
         udp_header += dns_header
         ip_header = struct.pack('!H',0x4500) + struct.pack('!H', len(udp_header)) + pkt[4:6] + struct.pack('!H',0)
-        ip_header += struct.pack('!B',1) + struct.pack('!B',17) + ip_checksum(pkt) + pkt[16:20] + pkt[12:16]
+        ip_header += struct.pack('!B',1) + struct.pack('!B',17) + self.ip_checksum(pkt) + pkt[16:20] + pkt[12:16]
         ip_header += dns_header
         self.send_deny_pkt(ip_header, pkt_dir)
 
@@ -177,18 +177,18 @@ class Firewall:
         return pkt[:8]+ttl+pkt[9:12]+checksum+pkt[16:20]+pkt[12:16]+pkt[20:]
 
     def udp_checksum(self,pkt):
-        udp_pkt=strip_ip(pkt)
-        return checksum(pkt[12:16]+pkt[16:20]+pkt[9:10]+udp_pkt[4:6]+udp_pkt[8:])
+        udp_pkt=self.strip_ip(pkt)
+        return self.checksum(pkt[12:16]+pkt[16:20]+pkt[9:10]+udp_pkt[4:6]+udp_pkt[8:])
 
     def ip_checksum(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=pkt[:ip_header_len] 
         ip_header=ip_header[:12]+struct.pack('!L',0)+ip_header[16:]
-        return checksum(ip_header)
+        return self.checksum(ip_header)
 
     def checksum(self,s):
         total=0
-        for i in len(s)/2:
+        for i in xrange(len(s)/2):
             total=total+struct.unpack('!H',ip_header[a*2:a*2+1])
         while not total>>16 == 0:
             total= (total>>16) + total&0xff
