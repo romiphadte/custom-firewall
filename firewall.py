@@ -83,6 +83,7 @@ class Firewall:
             if self.packet_matches_rule(pkt,pkt_dir,rule,country):
                 if rule[0]=="pass":
                     if self.is_http(pkt, pkt_dir):
+                        print "is http!"
                         if self.log_http(pkt, pkt_dir): # check if matches hostname
                             self.pass_packet(pkt,pkt_dir)
                     else:
@@ -97,8 +98,8 @@ class Firewall:
         if pkt_protocol == 6:
             tcp_pkt = self.strip_ip(pkt)
             if len(tcp_pkt) >= 20:
-                incoming_80 = pkt_dir == PKT_DIR_INCOMING and struct.unpack('!H', tcp_pkt[2:4])[0] == 80
-                outgoing_80 = pkt_dir == PKT_DIR_OUTGOING and struct.unpack('!H', tcp_pkt[0:2])[0] == 80
+                incoming_80 = pkt_dir == PKT_DIR_INCOMING and int(struct.unpack('!H', tcp_pkt[0:2])[0]) == 80
+                outgoing_80 = pkt_dir == PKT_DIR_OUTGOING and int(struct.unpack('!H', tcp_pkt[2:4])[0]) == 80
                 return incoming_80 or outgoing_80
             return False
         else:
@@ -122,8 +123,9 @@ class Firewall:
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         tcp_pkt = self.strip_ip(pkt)
         if pkt_protocol == 6:
-            incoming_80 = (pkt_dir==PKT_DIR_INCOMING and struct.unpack('!H',tcp_pkt[2:4])==80)
-            outgoing_80 = (pkt_dir==PKT_DIR_OUTGOING and struct.unpack('!H',tcp_pkt[0:2])==80)
+            incoming_80 = (pkt_dir==PKT_DIR_INCOMING and int(struct.unpack('!H',tcp_pkt[0:2])[0])==80)
+            outgoing_80 = (pkt_dir==PKT_DIR_OUTGOING and int(struct.unpack('!H',tcp_pkt[2:4])[0])==80)
+            print str(incoming_80) + str(outgoing_80)
             if incoming_80 or outgoing_80:
                 return self.put_http_together(pkt, pkt_dir)
         return False
@@ -161,31 +163,44 @@ class Firewall:
     def put_http_together(self, pkt, pkt_dir):
         #if we keep this packet, return true. if we drop this packet due to out-of-order, we return false
         #do the logging stuff here
-        tcp_pkt = strip_ip(pkt)
-        seqno = struct.unpack('!L', tcp_pkt[4:8])[0]
+        tcp_pkt = self.strip_ip(pkt)
+        seqno = int(struct.unpack('!L', tcp_pkt[4:8])[0])
+        ackno = int(struct.unpack('!L', tcp_pkt[8:12])[0])
         if pkt_dir == PKT_DIR_OUTGOING:
             port = struct.unpack('!H',tcp_pkt[2:4])[0]
+            ip_addr = struct.unpack('!L',pkt[12:16])[0]
         else:
             port = struct.unpack('!H',tcp_pkt[0:2])[0]
+            ip_addr = struct.unpack('!L',pkt[16:20])[0]
         key = (port, ip_addr)
-        http_pkt = strip_tcpip(pkt)
+        http_pkt = self.strip_tcpip(pkt)
+        print str(key)
         if key in self.http_flows:
+            print "key found!"
             val = self.http_flows[key]
-            if val[0] == seqno:
+            print "compare:" + str(val[0]) + "," + str(seqno)
+            print type(val[0])
+            print type(seqno)
+            if val[0] == seqno or val[0] == ackno:
+                print "val[0] == seqno"
                 if val[1] == PKT_DIR_INCOMING and pkt_dir == PKT_DIR_OUTGOING:
+                    print "writing!"
                     self.write_http(key)
                 #elif connection closed, write_http
+                data = self.strip_tcpip(pkt)
                 if pkt_dir == PKT_DIR_INCOMING:
-                    self.http_flows[key] = (seqno + 1, pkt_dir, self.http_flows[key][2], self.http_flows[key][3] + http_pkt)
+                    self.http_flows[key] = (seqno + len(data), pkt_dir, self.http_flows[key][2], self.http_flows[key][3] + http_pkt)
                 elif pkt_dir == PKT_DIR_OUTGOING:
-                    self.http_flows[key] = (seqno + 1, pkt_dir, self.http_flows[key][2] + http_pkt, self.http_flows[key][3])
+                    self.http_flows[key] = (ackno, pkt_dir, self.http_flows[key][2] + http_pkt, self.http_flows[key][3])
                 return True
             elif val[0] < seqno:
+                print str(val[0]) + "," + str(seqno)
                 return True
             else:
+                print "DROP"
                 return False
         else:
-            self.http_flows[key] = (seqno + 1, pkt_dir, http_pkt)
+            self.http_flows[key] = (seqno + 1, pkt_dir, http_pkt,'')
             return True
 
     def eval_pkt(self,pkt):
