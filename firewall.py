@@ -22,7 +22,7 @@ class Firewall:
         
         rules=[rule.strip("\n").lower() for rule in rules]
         rules=[rule.split() for rule in rules]
-        rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="pass" or rule[0]=="drop")]
+        rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="pass" or rule[0]=="drop" or rule[0]=="log" or rule[0]=="deny")]
         rules=rules[::-1]
        
         self.rules=rules #cleaned set of all rules that are in reverse priority
@@ -81,9 +81,11 @@ class Firewall:
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 elif rule[0]=="deny" and rule[1]=="dns":
-                    send_dns_response(pkt)
+                    print "Deny accoring to rule:", rule, self.eval_pkt(pkt)
+                    self.send_dns_response(pkt,pkt_dir)
                 elif rule[0]=="deny" and rule[1]=="tcp":
-                    send_tcp_response(pkt)
+                    print "Deny accoring to rule:", rule, self.eval_pkt(pkt)
+                    self.send_tcp_response(pkt)
                 return
         self.pass_packet(pkt,pkt_dir)
 
@@ -138,11 +140,11 @@ class Firewall:
         length = struct.unpack('!B', dns_pkt[next_len])
         while length != 0:
             next_len += length + 1
-            length = struct.unpack('!B', dns_pkt[next_len]
-        return dns_packet[12:next_len + 1]
+            length = struct.unpack('!B', dns_pkt[next_len])
+        return dns_pkt[12:next_len + 1]
 
     def send_dns_response(self, pkt, pkt_dir):
-        udp_pkt = strip_ip(pkt)
+        udp_pkt = self.strip_ip(pkt)
         dns_pkt = udp_pkt[8:]
         qname = read_qname(dns_pkt)
         answer = qname + struct.pack('!H', 1)
@@ -159,8 +161,8 @@ class Firewall:
         self.send_deny_pkt(ip_header, pkt_dir)
 
     def send_tcp_response(self,pkt,pkt_dir):
-        pkt=swap_ip(pkt)
-        tcp_pkt=strip_ip(pkt)
+        pkt=self.swap_ip(pkt)
+        tcp_pkt=self.strip_ip(pkt)
         
         new_tcp_pkt=tcp_pkt[2:4]+tcp_pkt[0:2]+struct.pack('!L',struct.unpack('!L',tcp_pkt[8:12])[0])+struct.pack('!L',struct.unpack('!L',tcp_pkt[4:8])[0]+1)+tcp_pkt[12]+0x04+tcp_pkt[14:16]+struct.pack('!L',0)+tcp_pkt[18:]
 
@@ -169,7 +171,7 @@ class Firewall:
         self.send_deny_pkt(new_pkt,pkt_dir)
 
     def swap_ip(self,pkt):
-        ttl=struct.pack(!LL,255)
+        ttl=struct.pack('!LL',255)
         checksum=struct.pack()   #TODO
 
         return pkt[:8]+ttl+pkt[9:12]+checksum+pkt[16:20]+pkt[12:16]+pkt[20:]
@@ -181,14 +183,14 @@ class Firewall:
     def ip_checksum(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=pkt[:ip_header_len] 
-        ip_header=ip_header[:12]+struct.pack('!L'.0)+ip_header[16:]
+        ip_header=ip_header[:12]+struct.pack('!L',0)+ip_header[16:]
         return checksum(ip_header)
 
     def checksum(self,s):
         total=0
         for i in len(s)/2:
             total=total+struct.unpack('!H',ip_header[a*2:a*2+1])
-        while total>>16 not 0:
+        while not total>>16 == 0:
             total= (total>>16) + total&0xff
 
         return ~total
