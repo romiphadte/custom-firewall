@@ -24,7 +24,13 @@ class Firewall:
         rules=[rule.split() for rule in rules]
         rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="pass" or rule[0]=="drop")]
         rules=rules[::-1]
-       
+
+        log_rules=[rule for rule in rules if len(rule) >= 3 and rule[0] == "log" and rule[1] == "http"]
+        rules = [rule for rule in rules if len(rule) >= 2 and rule[0] != "log"]
+
+        for rule in rules:
+            if len(rule) >= 3 and rule[0] == "log" and rule[1] == "http":
+
         self.rules=rules #cleaned set of all rules that are in reverse priority
 
         # TODO: Load the GeoIP DB ('geoipdb.txt') as well.
@@ -77,11 +83,25 @@ class Firewall:
         for rule in self.rules:
             if self.packet_matches_rule(pkt,pkt_dir,rule,country):
                 if rule[0]=="pass":
-                    self.pass_packet(pkt,pkt_dir)
+                    if log_http(pkt):
+                        self.pass_packet(pkt,pkt_dir)
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 return
         self.pass_packet(pkt,pkt_dir)
+
+    def log_http(self, pkt):
+        pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
+        tcp_pkt = self.strip_ip(pkt)
+        if pkt_protocol == 6:
+            incoming_80 = (pkt_dir==INCOMING and struct.unpack('!H',tcp_pkt[2:4])==80)
+            outgoing_80 = (pkt_dir==OUTGOING and struct.unpack('!H',tcp_pkt[0:2])==80)
+            if incoming_80 or outgoing_80:
+                for rule in log_rules:
+                    if log_rule_matches(pkt, rule):
+                        put_http_together(pkt)
+                        return True
+        return False
 
 
     def eval_pkt(self,pkt):
