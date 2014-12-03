@@ -94,16 +94,17 @@ class Firewall:
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         tcp_pkt = self.strip_ip(pkt)
         if pkt_protocol == 6:
-            incoming_80 = (pkt_dir==INCOMING and struct.unpack('!H',tcp_pkt[2:4])==80)
-            outgoing_80 = (pkt_dir==OUTGOING and struct.unpack('!H',tcp_pkt[0:2])==80)
+            incoming_80 = (pkt_dir==PKT_DIR_INCOMING and struct.unpack('!H',tcp_pkt[2:4])==80)
+            outgoing_80 = (pkt_dir==PKT_DIR_OUTGOING and struct.unpack('!H',tcp_pkt[0:2])==80)
             if incoming_80 or outgoing_80:
                 for rule in log_rules:
-                    if log_rule_matches(pkt, rule):
-                        return put_http_together(pkt)
+                    if self.log_rule_matches(pkt, rule):
+                        return self.put_http_together(pkt)
         return False
 
     def put_http_together(self, pkt):
         #if we keep this packet, return true. if we drop this packet due to out-of-order, we return false
+        #do the logging stuff here
         pass
 
     def eval_pkt(self,pkt):
