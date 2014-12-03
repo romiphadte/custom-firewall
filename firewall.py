@@ -133,19 +133,27 @@ class Firewall:
                 return class_match and type_match and is_outgoing and port_match and one_question
         return False
 
+    def read_qname(self, dns_pkt):
+        next_len = 12
+        length = struct.unpack('!B', dns_pkt[next_len])
+        while length != 0:
+            next_len += length + 1
+            length = struct.unpack('!B', dns_pkt[next_len]
+        return dns_packet[12:next_len + 1]
+
     def send_dns_response(self, pkt, pkt_dir):
         udp_pkt = strip_ip(pkt)
         dns_pkt = udp_pkt[8:]
-        answer = struct.pack('!B', 14) + "54.173.224.150" + struct.pack('!H', 1)
+        qname = read_qname(dns_pkt)
+        answer = qname + struct.pack('!H', 1)
         answer += struct.pack('!H', 1) + struct.pack('!L', 1) + struct.pack('!H', 4)
         answer += struct.pack('!B', 54) + struct.pack('!B', 173) + struct.pack('!B', 224) + struct.pack('!B', 150)
         dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])|0x80)&0xf9)
         dns_header += struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
         dns_header += answer
-        source_ip dest_ip protocol udp_len 
-        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',),udp_checksum(pkt))
+        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',len(dns_header)),udp_checksum(pkt))
         udp_header += dns_header
-        ip_header = struct.pack('!H',0x4500) + struct.pack('!H', 20) + pkt[4:6] + struct.pack('!H',0)
+        ip_header = struct.pack('!H',0x4500) + struct.pack('!H', len(udp_header)) + pkt[4:6] + struct.pack('!H',0)
         ip_header += struct.pack('!B',1) + struct.pack('!B',17) + ip_checksum(pkt) + pkt[16:20] + pkt[12:16]
         ip_header += dns_header
         self.send_deny_pkt(ip_header, pkt_dir)
