@@ -97,8 +97,8 @@ class Firewall:
         if pkt_protocol == 6:
             tcp_pkt = self.strip_ip(pkt)
             if len(tcp_pkt) >= 20:
-                incoming_80 = pkt_dir == PKT_DIR_INCOMING and struct.unpack('!H', tcp_pkt[2:4])[0] == 80:
-                outgoing_80 = pkt_dir == PKT_DIR_OUTGOING and struct.unpack('!H', tcp_pkt[0:2])[0] == 80:
+                incoming_80 = pkt_dir == PKT_DIR_INCOMING and struct.unpack('!H', tcp_pkt[2:4])[0] == 80
+                outgoing_80 = pkt_dir == PKT_DIR_OUTGOING and struct.unpack('!H', tcp_pkt[0:2])[0] == 80
                 return incoming_80 or outgoing_80
             return False
         else:
