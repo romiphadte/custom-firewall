@@ -131,10 +131,19 @@ class Firewall:
                 return class_match and type_match and is_outgoing and port_match and one_question
         return False
 
+    def read_qname(self, dns_pkt):
+        next_len = 12
+        length = struct.unpack('!B', dns_pkt[next_len])
+        while length != 0:
+            next_len += length + 1
+            length = struct.unpack('!B', dns_pkt[next_len]
+        return dns_packet[12:next_len + 1]
+
     def send_dns_response(self, pkt, pkt_dir):
         udp_pkt = strip_ip(pkt)
         dns_pkt = udp_pkt[8:]
-        answer = struct.pack('!B', 14) + "54.173.224.150" + struct.pack('!H', 1)
+        qname = read_qname(dns_pkt)
+        answer = qname + struct.pack('!H', 1)
         answer += struct.pack('!H', 1) + struct.pack('!L', 1) + struct.pack('!H', 4)
         answer += struct.pack('!B', 54) + struct.pack('!B', 173) + struct.pack('!B', 224) + struct.pack('!B', 150)
         dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])|0x80)&0xf9)
