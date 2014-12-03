@@ -140,11 +140,11 @@ class Firewall:
         dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])|0x80)&0xf9)
         dns_header += struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
         dns_header += answer
-        udp_checksum = "yes" #TODO create checksum
-        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',),udp_checksum)
+        udp_checksum = checksum(dns_header)
+        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',len(dns_header)),udp_checksum)
         udp_header += dns_header
-        ip_checksum = checksum
-        ip_header = struct.pack('!H',0x4500) + struct.pack('!H', 20) + pkt[4:6] + struct.pack('!H',0)
+        ip_checksum = checksum(udp_header)
+        ip_header = struct.pack('!H',0x4500) + struct.pack('!H', len(udp_header)) + pkt[4:6] + struct.pack('!H',0)
         ip_header += struct.pack('!B',1) + struct.pack('!B',17) + ip_checksum + pkt[16:20] + pkt[12:16]
         ip_header += dns_header
         self.send_deny_pkt(ip_header, pkt_dir)
