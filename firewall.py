@@ -42,7 +42,9 @@ class Firewall:
         ip_ranges=[ip_range.strip("\n").lower() for ip_range in ip_ranges]
         ip_ranges=[ip_range.split(" ") for ip_range in ip_ranges]
         self.ip_ranges=ip_ranges
-
+        
+        # http persistent connections
+        self.http_flows = {} # format (int_port, dest_ip):(next_seqno,pkt_dir,data)
 
     def country_for_ip(self,ip): #expecting ip string
         ip_min=0
@@ -99,13 +101,32 @@ class Firewall:
             if incoming_80 or outgoing_80:
                 for rule in log_rules:
                     if self.log_rule_matches(pkt, rule):
-                        return self.put_http_together(pkt)
+                        return self.put_http_together(pkt, pkt_dir)
         return False
 
-    def put_http_together(self, pkt):
+    def put_http_together(self, pkt, pkt_dir):
         #if we keep this packet, return true. if we drop this packet due to out-of-order, we return false
         #do the logging stuff here
-        pass
+        tcp_pkt = strip_ip(pkt)
+        seqno = struct.unpack('!L', tcp_pkt[4:8])[0]
+        if pkt_dir == PKT_DIR_OUTGOING:
+            port = struct.unpack('!H',tcp_pkt[2:4])[0]
+        else:
+            port = struct.unpack('!H',tcp_pkt[0:2])[0]
+        key = (port, ip_addr)
+        http_pkt = strip_tcpip(pkt)
+        if key in self.http_flows:
+            val = self.http_flows[key]
+            if val[0] == seqno:
+                self.http_flows[key] = (seqno + 1, pkt_dir, val[2] + http_pkt)
+                return True
+            elif val[0] < seqno:
+                return True
+            else:
+                return False
+        else:
+            self.http_flows[key] = (seqno + 1, pkt_dir, http_pkt)
+            return True
 
     def eval_pkt(self,pkt):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
@@ -225,6 +246,11 @@ class Firewall:
     def strip_ip(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         return pkt[ip_header_len:] 
+
+    def strip_tcpip(self,pkt):
+        tcp_pkt = self.strip_ip(pkt)
+        tcp_header_len = (struct.unpack('!B',pkt[12])[0]&0xF0)*4
+        return tcp_pkt[tcp_header_len:]
 
     def should_ignore_packet(self,pkt):
         protocol=struct.unpack('!B',pkt[9:10])[0]
