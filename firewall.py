@@ -146,6 +146,7 @@ class Firewall:
         return dns_pkt[12:next_len + 1]
 
     def send_dns_response(self, pkt, pkt_dir):
+        #pkt=self.swap_ip(pkt)
         udp_pkt = self.strip_ip(pkt)
         dns_pkt = udp_pkt[8:]
         qname = self.read_qname(dns_pkt)
@@ -155,11 +156,13 @@ class Firewall:
         dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])[0]|0x80)&0xf9)
         dns_header += struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
         dns_header += answer
-        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',8),struct.pack('!H',0))
+        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',8+len(dns_header)),struct.pack('!H',0))
         udp_header += dns_header
-        ip_header = struct.pack('!H',0x4500) + struct.pack('!H', len(udp_header)) + pkt[4:6] + struct.pack('!H',0)
-        ip_header += struct.pack('!B',1) + struct.pack('!B',17) + struct.pack('!H',0) + pkt[16:20] + pkt[12:16]
-        ip_header += dns_header
+        #ip_header = struct.pack('!H',0x4500) + struct.pack('!H', len(udp_header)) + pkt[4:6] + struct.pack('!H',0)
+        #ip_header += struct.pack('!B',1) + struct.pack('!B',17) + struct.pack('!H',0) + pkt[16:20] + pkt[12:16]
+        #ip_header += dns_header
+        ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
+        ip_header=self.swap_ip(pkt)[:ip_header_len]+udp_header
 
         ip_header=self.udp_checksum(ip_header)
         new_pkt=self.ip_checksum(ip_header)
@@ -168,37 +171,61 @@ class Firewall:
     def send_tcp_response(self,pkt,pkt_dir):
         pkt=self.swap_ip(pkt)
         tcp_pkt=self.strip_ip(pkt)
-        new_seq=struct.pack('!L',struct.unpack('!L',tcp_pkt[8:12])[0]) 
-        new_ack=struct.pack('!L',struct.unpack('!L',tcp_pkt[4:8])[0]+1)
-        new_tcp_pkt=tcp_pkt[2:4]+tcp_pkt[0:2]+new_seq+new_ack+tcp_pkt[12]+0x04+tcp_pkt[14:16]+struct.pack('!L',0)+tcp_pkt[18:]
+        new_seq=struct.pack('!I',0)#struct.unpack('!L',tcp_pkt[8:12])[0]) 
+        new_ack=struct.pack('!I',struct.unpack('!L',tcp_pkt[4:8])[0]+1)
+        new_tcp_pkt=tcp_pkt[2:4]+tcp_pkt[0:2]+new_seq+new_ack+struct.pack('!B',0b01010000)+struct.pack('!B',0b00010100)+struct.pack('!HHH',0,0,0)
 
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         new_pkt=pkt[:ip_header_len] + new_tcp_pkt
+        new_pkt=self.tcp_checksum(new_pkt)
         self.send_deny_pkt(new_pkt,pkt_dir)
 
     def swap_ip(self,pkt):
-        ttl=struct.pack('!B',255)
+        ttl=struct.pack('!B',64)
         checksum=struct.pack('!H',0)   #originally zero
+        pkt[:6]+struct.pack('!B', 0x40)
         new_pkt=pkt[:8]+ttl+pkt[9]+checksum+pkt[16:20]+pkt[12:16]+pkt[20:]
         new_pkt=self.ip_checksum(new_pkt)
         return new_pkt 
 
     def udp_checksum(self,pkt):
-        udp_pkt=self.strip_ip(pkt)
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=pkt[:ip_header_len]
-        print "OLD UDP", struct.unpack('!H',udp_pkt[6:8])
-        udp_pkt=udp_pkt[0:6]+struct.pack('!B',0)+udp_pkt[8:]
-        checksum=struct.pack('!H',self.checksum(pkt[12:16]+pkt[16:20]+struct.pack('!B',0)+pkt[9:10]+udp_pkt[4:6]))
-        print "New UDP", struct.unpack('!H',checksum)
+        udp_pkt=self.strip_ip(pkt)
+        old=struct.unpack('!H',udp_pkt[6:8])[0]
+        udp_pkt=udp_pkt[0:6]+struct.pack('!H',0)+udp_pkt[8:]
+        checksum=struct.pack('!H',self.checksum(pkt[12:16]+pkt[16:20]+struct.pack('!B',0)+pkt[9:10]+struct.pack('!H',len(udp_pkt))+udp_pkt))
+        new=struct.unpack('!H',checksum)
+        if old!=new:
+            print "diff"
         return ip_header+udp_pkt[0:6]+checksum+udp_pkt[8:]
 
     def ip_checksum(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=pkt[:ip_header_len] 
+        old=struct.unpack('!H',ip_header[10:12])[0]
         ip_header=ip_header[:10]+struct.pack('!H',0)+ip_header[12:]
+        new=self.checksum(ip_header)
+        if old!=new:
+            print "diff"
         new_ip_header=ip_header[:10]+struct.pack('!H',self.checksum(ip_header))+ip_header[12:]
         return new_ip_header+pkt[ip_header_len:] 
+
+    def tcp_checksum(self,pkt):
+        ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
+        ip_header=pkt[:ip_header_len] 
+        tcp_pkt=self.strip_ip(pkt)
+        old=struct.unpack('!H',tcp_pkt[16:18])[0]
+        tcp_pkt=tcp_pkt[:16]+struct.pack('!H',0)+tcp_pkt[18:]
+        entire=tcp_pkt+ip_header[12:16]+ip_header[16:20]+struct.pack('!H', 6)+struct.pack('!H',len(tcp_pkt))
+        new=self.checksum(entire)
+        if old!=new:
+            print "diff", old, new, len(tcp_pkt), 
+        else:
+            print "same"
+        new_tcp=tcp_pkt[:16]+struct.pack('!H',self.checksum(entire))+tcp_pkt[18:]
+        return ip_header+new_tcp
+         
 
     def checksum(self,s):
         total=0
