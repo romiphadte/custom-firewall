@@ -99,10 +99,12 @@ class Firewall:
             if incoming_80 or outgoing_80:
                 for rule in log_rules:
                     if log_rule_matches(pkt, rule):
-                        put_http_together(pkt)
-                        return True
+                        return put_http_together(pkt)
         return False
 
+    def put_http_together(self, pkt):
+        #if we keep this packet, return true. if we drop this packet due to out-of-order, we return false
+        pass
 
     def eval_pkt(self,pkt):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
