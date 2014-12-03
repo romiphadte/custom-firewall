@@ -81,7 +81,7 @@ class Firewall:
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 elif rule[0]=="deny" and rule[1]=="dns":
-                    send_dns_response()
+                    send_dns_response(pkt)
                 return
         self.pass_packet(pkt,pkt_dir)
 
@@ -131,8 +131,17 @@ class Firewall:
                 return class_match and type_match and is_outgoing and port_match and one_question
         return False
 
-    def send_dns_response(self):
-        pkt=
+    def send_dns_response(self, pkt):
+        ip_checksum = "yes"
+        ip_header = struct.pack('!H',0x4500) + totlen + pkt[4:6] + struct.pack('!H',0) + struct.pack('!B',1)
+        ip_header += struct.pack('!B',17) + ip_checksum + pkt[16:20] + pkt[12:16]
+        udp_pkt = strip_ip(pkt)
+        udp_checksum = "yes"
+        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',),udp_checksum)
+        dns_pkt = udp_pkt[8:]
+        dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])|0x80)&0xf9)
+        dns_header = dns_header + struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
+        answer = "54.173.224.150"
 
     def packet_matches_rule(self,pkt,pkt_dir,rule,country):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
