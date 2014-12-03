@@ -106,7 +106,7 @@ class Firewall:
             self.iface_ext.send_ip_packet(pkt)
 
     #sends a denial packet in the OPPOSITE direction pkt_dir
-    def send_deny_packet(self, pkt, pkt_dir):
+    def send_deny_pkt(self, pkt, pkt_dir):
         if pkt_dir==PKT_DIR_INCOMING:
             self.iface_ext.send_ip_packet(pkt)
         elif pkt_dir==PKT_DIR_OUTGOING:
@@ -131,17 +131,24 @@ class Firewall:
                 return class_match and type_match and is_outgoing and port_match and one_question
         return False
 
-    def send_dns_response(self, pkt):
-        ip_checksum = "yes"
-        ip_header = struct.pack('!H',0x4500) + totlen + pkt[4:6] + struct.pack('!H',0) + struct.pack('!B',1)
-        ip_header += struct.pack('!B',17) + ip_checksum + pkt[16:20] + pkt[12:16]
+    def send_dns_response(self, pkt, pkt_dir):
         udp_pkt = strip_ip(pkt)
-        udp_checksum = "yes"
-        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',),udp_checksum)
         dns_pkt = udp_pkt[8:]
+        answer = struct.pack('!B', 14) + "54.173.224.150" + struct.pack('!H', 1)
+        answer += struct.pack('!H', 1) + struct.pack('!L', 1) + struct.pack('!H', 4)
+        answer += struct.pack('!B', 54) + struct.pack('!B', 173) + struct.pack('!B', 224) + struct.pack('!B', 150)
         dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])|0x80)&0xf9)
-        dns_header = dns_header + struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
-        answer = "54.173.224.150"
+        dns_header += struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
+        dns_header += answer
+        udp_checksum = "yes" #TODO create checksum
+        udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',),udp_checksum)
+        udp_header += dns_header
+        ip_checksum = checksum
+        ip_header = struct.pack('!H',0x4500) + struct.pack('!H', 20) + pkt[4:6] + struct.pack('!H',0)
+        ip_header += struct.pack('!B',1) + struct.pack('!B',17) + ip_checksum + pkt[16:20] + pkt[12:16]
+        ip_header += dns_header
+        self.send_deny_pkt(ip_header, pkt_dir)
+
 
     def packet_matches_rule(self,pkt,pkt_dir,rule,country):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
