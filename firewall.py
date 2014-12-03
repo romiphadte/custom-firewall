@@ -83,7 +83,7 @@ class Firewall:
             if self.packet_matches_rule(pkt,pkt_dir,rule,country):
                 if rule[0]=="pass":
                     if self.is_http(pkt, pkt_dir):
-                        if self.log_http(pkt, pkt_dir):
+                        if self.log_http(pkt, pkt_dir): # check if matches hostname
                             self.pass_packet(pkt,pkt_dir)
                     else:
                         self.pass_packet(pkt,pkt_dir)
@@ -104,6 +104,20 @@ class Firewall:
         else:
             return False
 
+    def log_rule_matches(self, host_name, rule, pkt_dir):
+        if host_name == rule[2]:
+            return True
+        else:
+            rulename = rule[2].split('.')[::-1]
+            hostname = host_name.split('.')[::-1]
+            i = 0
+            while i < len(hostname) and i < len(rulename):
+                if rulename[i] == '*':
+                    return True
+                elif rulename[i] != hostname[i]:
+                    return False
+            return len(hostname) == len(rule_name)
+
     def log_http(self, pkt, pkt_dir):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         tcp_pkt = self.strip_ip(pkt)
@@ -111,9 +125,7 @@ class Firewall:
             incoming_80 = (pkt_dir==PKT_DIR_INCOMING and struct.unpack('!H',tcp_pkt[2:4])==80)
             outgoing_80 = (pkt_dir==PKT_DIR_OUTGOING and struct.unpack('!H',tcp_pkt[0:2])==80)
             if incoming_80 or outgoing_80:
-                for rule in log_rules:
-                    if self.log_rule_matches(pkt, rule):
-                        return self.put_http_together(pkt, pkt_dir)
+                return self.put_http_together(pkt, pkt_dir)
         return False
 
     def write_http(self, key):
@@ -139,8 +151,10 @@ class Firewall:
         else:
             object_size = '-1'
         log = "%s %s %s %s %s %s" % (host_name, method, path, version, status_code, object_size)
-        logfile.write(log)
-        logfile.flush()
+        for rule in log_rules:
+            if log_rule_matches(host_name, rule, pkt_dir):
+                logfile.write(log)
+                logfile.flush()
         self.http_flows[key][2] = ''
         self.http_flows[key][3] = ''
 
