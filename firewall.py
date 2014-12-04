@@ -181,7 +181,6 @@ class Firewall:
                     self.http_flows[key] = (val[0], val[1], val[2], val[3], 2)
             elif pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
                 if pkt_dir == val[1]:
-                    data = self.strip_tcpip(pkt)
                     out_data = val[2] + http_pkt
                     new_pkt_dir = pkt_dir
                     #self.counter += 1
@@ -190,21 +189,20 @@ class Firewall:
                     if re.search("\r\n\r\n", out_data):
                         print "outgoing packet finished"
                         new_pkt_dir = PKT_DIR_INCOMING
-                    self.http_flows[key] = (seqno + len(data) - 20, new_pkt_dir, out_data, val[3], val[4])
+                    self.http_flows[key] = (seqno + len(http_pkt), new_pkt_dir, out_data, val[3], val[4])
                 return True
             elif pkt_dir == PKT_DIR_INCOMING and ackno == val[0]:
                 if pkt_dir == val[1]:
                     write = False
-                    data = self.strip_tcpip(pkt)
                     in_data = val[3] + http_pkt
                     new_pkt_dir = pkt_dir
-                    self.counter += 1
-                    if self.counter % self.pdbinterval == 0:
-                        pdb.set_trace()
+                    #self.counter += 1
+                    #if self.counter % self.pdbinterval == 0:
+                    #    pdb.set_trace()
                     if re.search("\r\n\r\n", in_data):
                         new_pkt_dir = PKT_DIR_OUTGOING
                         write = True
-                    self.http_flows[key] = (ackno + len(data), new_pkt_dir, val[2], in_data, val[4])
+                    self.http_flows[key] = (ackno + len(http_pkt), new_pkt_dir, val[2], in_data, val[4])
                     if write:
                         self.write_http(key)
                 return True
@@ -214,6 +212,7 @@ class Firewall:
                 return True
             else:
                 print "DROP"
+                pdb.set_trace()
                 return False
         else:
             self.http_flows[key] = (seqno, pkt_dir,'','', 0)
@@ -340,7 +339,7 @@ class Firewall:
 
     def strip_tcpip(self,pkt):
         tcp_pkt = self.strip_ip(pkt)
-        tcp_header_len = (struct.unpack('!B',pkt[12])[0]&0xF0)*4
+        tcp_header_len = ((struct.unpack('!B',tcp_pkt[12])[0]&0xF0)>>4)*4
         return tcp_pkt[tcp_header_len:]
 
     def should_ignore_packet(self,pkt):
