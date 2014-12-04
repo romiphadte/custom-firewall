@@ -43,7 +43,7 @@ class Firewall:
         # http persistent connections
         self.http_flows = {} # format (int_port, dest_ip):(next_seqno,pkt_dir,data_in,data_out, established)
         self.counter = 1
-        self.pdbinterval = 10
+        self.pdbinterval = 3
 
     def country_for_ip(self,ip): #expecting ip string
         ip_min=0
@@ -121,6 +121,7 @@ class Firewall:
             return len(hostname) == len(rule_name)
 
     def write_http(self, key):
+        print "write http!"
         val = self.http_flows[key]
         logfile = open('http.log', 'a')
         split_req = val[2].split()
@@ -179,35 +180,37 @@ class Firewall:
                 if pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
                     self.http_flows[key] = (val[0], val[1], val[2], val[3], 2)
             elif pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
-                data = self.strip_tcpip(pkt)
-                if pkt_dir == PKT_DIR_OUTGOING:
+                if pkt_dir == val[1]:
+                    data = self.strip_tcpip(pkt)
                     out_data = val[2] + http_pkt
                     new_pkt_dir = pkt_dir
-                    self.counter += 1
+                    #self.counter += 1
                     #if self.counter % self.pdbinterval == 0:
                     #    pdb.set_trace()
                     if re.search("\r\n\r\n", out_data):
                         print "outgoing packet finished"
                         new_pkt_dir = PKT_DIR_INCOMING
                     self.http_flows[key] = (seqno + len(data) - 20, new_pkt_dir, out_data, val[3], val[4])
-                if pkt_dir == PKT_DIR_INCOMING:
+                return True
+            elif pkt_dir == PKT_DIR_INCOMING and ackno == val[0]:
+                if pkt_dir == val[1]:
                     write = False
+                    data = self.strip_tcpip(pkt)
                     in_data = val[3] + http_pkt
                     new_pkt_dir = pkt_dir
                     self.counter += 1
-                    #if self.counter % self.pdbinterval == 0:
-                    #pdb.set_trace()
+                    if self.counter % self.pdbinterval == 0:
+                        pdb.set_trace()
                     if re.search("\r\n\r\n", in_data):
                         new_pkt_dir = PKT_DIR_OUTGOING
                         write = True
-                    self.http_flows[key] = (seqno + len(data) - 20, new_pkt_dir, val[2], in_data, val[4])
+                    self.http_flows[key] = (ackno + len(data), new_pkt_dir, val[2], in_data, val[4])
                     if write:
                         self.write_http(key)
                 return True
-            elif pkt_dir == PKT_DIR_INCOMING and ackno == val[0]:
-                self.http_flows[key] = (val[0], val[1], val[2], val[3], val[4])
+            elif pkt_dir == PKT_DIR_OUTGOING and val[0] > seqno:
                 return True
-            elif val[0] > seqno:
+            elif pkt_dir == PKT_DIR_INCOMING and val[0] > ackno:
                 return True
             else:
                 print "DROP"
