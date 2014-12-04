@@ -22,10 +22,9 @@ class Firewall:
         
         rules=[rule.strip("\n").lower() for rule in rules]
         rules=[rule.split() for rule in rules]
-        rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="pass" or rule[0]=="drop")]
+        rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="deny" or rule[0]=="log" or rule[0]=="pass" or rule[0]=="drop")]
         rules=rules[::-1]
-
-        log_rules=[rule for rule in rules if len(rule) >= 3 and rule[0] == "log" and rule[1] == "http"]
+        self.log_rules=[rule for rule in rules if len(rule) >= 3 and rule[0] == "log" and rule[1] == "http"]
         rules = [rule for rule in rules if len(rule) >= 2 and rule[0] != "log"]
 
         self.rules=rules #cleaned set of all rules that are in reverse priority
@@ -120,21 +119,21 @@ class Firewall:
                     return False
             return len(hostname) == len(rule_name)
 
-    def write_http(self, key):
+    def write_http(self, key, pkt_dir):
         print "write http!"
         val = self.http_flows[key]
         logfile = open('http.log', 'a')
         split_req = val[2].split()
-        h_match = re.search('Host:\s+(?P<hostname>\w+)', val[2])
+        h_match = re.search('Host:\s+(?P<hostname>\S+)', val[2])
         if h_match:
             host_name = h_match.group('hostname')
             if type(host_name) == tuple:
                 host_name = host_name[0]
         else:
             host_name = key[1]
-        method = split_val[0]
-        path = split_val[1]
-        version = split_val[2]
+        method = split_req[0]
+        path = split_req[1]
+        version = split_req[2]
         status_code = val[3].split()[1]
         os_match = re.search('Content-Length:\s+(?P<objsize>\w+)', val[3])
         if os_match:
@@ -144,12 +143,14 @@ class Firewall:
         else:
             object_size = '-1'
         log = "%s %s %s %s %s %s" % (host_name, method, path, version, status_code, object_size)
-        for rule in log_rules:
-            if log_rule_matches(host_name, rule, pkt_dir):
+        for rule in self.log_rules:
+            if self.log_rule_matches(host_name, rule, pkt_dir):
+                print "log rule matches!"
                 logfile.write(log)
                 logfile.flush()
-        self.http_flows[key][2] = ''
-        self.http_flows[key][3] = ''
+                break
+        flow = self.http_flows[key]
+        self.http_flows[key] = (flow[0], flow[1], '', '', flow[4])
 
     def put_http_together(self, pkt, pkt_dir):
         #if we keep this packet, return true. if we drop this packet due to out-of-order, we return false
@@ -204,7 +205,7 @@ class Firewall:
                         write = True
                     self.http_flows[key] = (ackno + len(http_pkt), new_pkt_dir, val[2], in_data, val[4])
                     if write:
-                        self.write_http(key)
+                        self.write_http(key, pkt_dir)
                 return True
             elif pkt_dir == PKT_DIR_OUTGOING and val[0] > seqno:
                 return True
@@ -212,7 +213,6 @@ class Firewall:
                 return True
             else:
                 print "DROP"
-                pdb.set_trace()
                 return False
         else:
             self.http_flows[key] = (seqno, pkt_dir,'','', 0)
