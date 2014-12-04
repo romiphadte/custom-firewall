@@ -65,7 +65,7 @@ class Firewall:
             self.pass_packet(pkt,pkt_dir)
             return
         if struct.unpack('!B',pkt[9:10])[0]==17:
-            self.udp_checksum(pkt) 
+            self.ip_checksum(pkt) 
             
         ip=""
         src_ip=pkt[12:16]
@@ -158,11 +158,13 @@ class Firewall:
         dns_header += answer
         udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',8+len(dns_header)),struct.pack('!H',0))
         udp_header += dns_header
-        #ip_header = struct.pack('!H',0x4500) + struct.pack('!H', len(udp_header)) + pkt[4:6] + struct.pack('!H',0)
+        :#ip_header = struct.pack('!H',0x4500) + struct.pack('!H', len(udp_header)) + pkt[4:6] + struct.pack('!H',0)
         #ip_header += struct.pack('!B',1) + struct.pack('!B',17) + struct.pack('!H',0) + pkt[16:20] + pkt[12:16]
         #ip_header += dns_header
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=self.swap_ip(pkt)[:ip_header_len]+udp_header
+        length=struct.pack('!H',len(ip_header))
+        ip_header=ip_header[:2]+length+ip_header[4:]
 
         ip_header=self.udp_checksum(ip_header)
         new_pkt=self.ip_checksum(ip_header)
@@ -194,7 +196,8 @@ class Firewall:
         udp_pkt=self.strip_ip(pkt)
         old=struct.unpack('!H',udp_pkt[6:8])[0]
         udp_pkt=udp_pkt[0:6]+struct.pack('!H',0)+udp_pkt[8:]
-        checksum=struct.pack('!H',self.checksum(pkt[12:16]+pkt[16:20]+struct.pack('!B',0)+pkt[9:10]+struct.pack('!H',len(udp_pkt))+udp_pkt))
+        #checksum=struct.pack('!H',self.checksum(pkt[12:16]+pkt[16:20]+struct.pack('!B',0)+pkt[9:10]+struct.pack('!H',len(udp_pkt))+udp_pkt))
+        checksum=struct.pack('!H',0)
         new=struct.unpack('!H',checksum)
         if old!=new:
             print "diff"
@@ -232,7 +235,7 @@ class Firewall:
         for i in xrange(len(s)/2):
             total=total+struct.unpack('!H',s[i*2:(i+1)*2])[0]
         if len(s)%2==1:
-            total=total+struct.unpack('!B',s[-1])[0]
+            total=total+(struct.unpack('!B',s[-1])[0]<<8)
 
         while not total>>16 == 0:
             total= (total>>16) + total&0xffff
