@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
-import pdb
 import struct
 import socket
 import re
@@ -29,9 +28,6 @@ class Firewall:
 
         self.rules=rules #cleaned set of all rules that are in reverse priority
 
-        # TODO: Load the GeoIP DB ('geoipdb.txt') as well.
-        # TODO: Also do some initialization if needed.
-
         f=open('geoipdb.txt','r')
         ip_ranges=f.readlines()
         
@@ -41,8 +37,6 @@ class Firewall:
         
         # http persistent connections
         self.http_flows = {} # format (int_port, dest_ip):(next_seqno,pkt_dir,data_in,data_out, established)
-        self.counter = 1
-        self.pdbinterval = 3
 
     def country_for_ip(self,ip): #expecting ip string
         ip_min=0
@@ -128,7 +122,6 @@ class Firewall:
             return len(hostname) == len(rule_name)
 
     def write_http(self, key, pkt_dir):
-        print "write http!"
         val = self.http_flows[key]
         logfile = open('http.log', 'a')
         split_req = val[2].split()
@@ -150,19 +143,16 @@ class Firewall:
                 object_size = object_size[0]
         else:
             object_size = '-1'
-        log = "%s %s %s %s %s %s" % (host_name, method, path, version, status_code, object_size)
+        log = "%s %s %s %s %s %s\n" % (host_name, method, path, version, status_code, object_size)
         for rule in self.log_rules:
             if self.log_rule_matches(host_name, rule, pkt_dir):
-                print "log rule matches!"
                 logfile.write(log)
                 logfile.flush()
                 break
         flow = self.http_flows[key]
-        self.http_flows[key] = (flow[0], flow[1], '', '', flow[4])
+        self.http_flows[key] = (flow[0], flow[1], '', '', 3)
 
     def put_http_together(self, pkt, pkt_dir):
-        #if we keep this packet, return true. if we drop this packet due to out-of-order, we return false
-        #do the logging stuff here
         tcp_pkt = self.strip_ip(pkt)
         seqno = int(struct.unpack('!L', tcp_pkt[4:8])[0])
         ackno = int(struct.unpack('!L', tcp_pkt[8:12])[0])
@@ -174,11 +164,8 @@ class Firewall:
             ip_addr = struct.unpack('!L',pkt[12:16])[0]
         key = (port, ip_addr)
         http_pkt = self.strip_tcpip(pkt)
-        direction = ("<---INCOMING", "--->OUTGOING")
-        print str(key) + ":SN=" + str(seqno) + ", ACK=" + str(ackno) + direction[pkt_dir]
         if key in self.http_flows:
             val = self.http_flows[key]
-            print "expecting SN/ACK " + str(val[0])
             if val[4] == 0:
                 if pkt_dir == PKT_DIR_INCOMING and ackno == val[0] + 1:
                     self.http_flows[key] = (val[0] + 1, val[1], val[2], val[3], 1)
@@ -192,11 +179,7 @@ class Firewall:
                 if pkt_dir == val[1]:
                     out_data = val[2] + http_pkt
                     new_pkt_dir = pkt_dir
-                    #self.counter += 1
-                    #if self.counter % self.pdbinterval == 0:
-                    #    pdb.set_trace()
                     if re.search("\r\n\r\n", out_data):
-                        print "outgoing packet finished"
                         new_pkt_dir = PKT_DIR_INCOMING
                     self.http_flows[key] = (seqno + len(http_pkt), new_pkt_dir, out_data, val[3], val[4])
                 return True
@@ -205,14 +188,11 @@ class Firewall:
                     write = False
                     in_data = val[3] + http_pkt
                     new_pkt_dir = pkt_dir
-                    #self.counter += 1
-                    #if self.counter % self.pdbinterval == 0:
-                    #    pdb.set_trace()
-                    if re.search("\r\n\r\n", in_data):
+                    if re.search("Host:\s+\S+.*Content-Length:\s+\w+|Content-Length:\s+\w+.*Host:\s+\S+|\r\n\r\n", in_data):
                         new_pkt_dir = PKT_DIR_OUTGOING
                         write = True
                     self.http_flows[key] = (ackno + len(http_pkt), new_pkt_dir, val[2], in_data, val[4])
-                    if write:
+                    if write and self.http_flows[key][4] == 2:
                         self.write_http(key, pkt_dir)
                 return True
             elif pkt_dir == PKT_DIR_OUTGOING and val[0] > seqno:
@@ -220,7 +200,6 @@ class Firewall:
             elif pkt_dir == PKT_DIR_INCOMING and val[0] > ackno:
                 return True
             else:
-                print "DROP"
                 return False
         else:
             self.http_flows[key] = (seqno, pkt_dir,'','', 0)
@@ -303,7 +282,6 @@ class Firewall:
         self.send_deny_pkt(new_pkt, pkt_dir)
 
     def send_tcp_response(self,pkt,pkt_dir):
-        print "tcp deny"
         pkt=self.swap_ip(pkt)
         tcp_pkt=self.strip_ip(pkt)
         new_seq=struct.pack('!I',0)#struct.unpack('!L',tcp_pkt[8:12])[0]) 
@@ -318,7 +296,6 @@ class Firewall:
         new_pkt=self.tcp_checksum(new_pkt)
         new_pkt=self.ip_checksum(new_pkt)
         self.send_deny_pkt(new_pkt,pkt_dir)
-        print "tcp deny"
 
     def swap_ip(self,pkt):
         ttl=struct.pack('!B',64)
@@ -332,23 +309,14 @@ class Firewall:
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=pkt[:ip_header_len]
         udp_pkt=self.strip_ip(pkt)
-        old=struct.unpack('!H',udp_pkt[6:8])[0]
         udp_pkt=udp_pkt[0:6]+struct.pack('!H',0)+udp_pkt[8:]
-        #checksum=struct.pack('!H',self.checksum(pkt[12:16]+pkt[16:20]+struct.pack('!B',0)+pkt[9:10]+struct.pack('!H',len(udp_pkt))+udp_pkt))
         checksum=struct.pack('!H',0)
-        new=struct.unpack('!H',checksum)
-        if old!=new:
-            print "diff"
         return ip_header+udp_pkt[0:6]+checksum+udp_pkt[8:]
 
     def ip_checksum(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=pkt[:ip_header_len] 
-        old=struct.unpack('!H',ip_header[10:12])[0]
         ip_header=ip_header[:10]+struct.pack('!H',0)+ip_header[12:]
-        new=self.checksum(ip_header)
-        if old!=new:
-            print "diff"
         new_ip_header=ip_header[:10]+struct.pack('!H',self.checksum(ip_header))+ip_header[12:]
         return new_ip_header+pkt[ip_header_len:] 
 
@@ -356,14 +324,8 @@ class Firewall:
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=pkt[:ip_header_len] 
         tcp_pkt=self.strip_ip(pkt)
-        old=struct.unpack('!H',tcp_pkt[16:18])[0]
         tcp_pkt=tcp_pkt[:16]+struct.pack('!H',0)+tcp_pkt[18:]
         entire=tcp_pkt+ip_header[12:16]+ip_header[16:20]+struct.pack('!H', 6)+struct.pack('!H',len(tcp_pkt))
-        new=self.checksum(entire)
-        if old!=new:
-            print "diff", old, new, len(tcp_pkt), 
-        else:
-            print "same"
         new_tcp=tcp_pkt[:16]+struct.pack('!H',self.checksum(entire))+tcp_pkt[18:]
         return ip_header+new_tcp
          
@@ -445,7 +407,7 @@ class Firewall:
             else:
                 port = src_port
 
-            if rule[3]!="any":                             # port
+            if len(rule) >= 4 and rule[3]!="any":                             # port
                 if "-" in rule[3]: #port range
                     port_range=rule[3].split("-")
                     if int(port_range[0])<=port and port<=int(port_range[1]):
