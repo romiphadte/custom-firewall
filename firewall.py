@@ -303,6 +303,7 @@ class Firewall:
         self.send_deny_pkt(new_pkt, pkt_dir)
 
     def send_tcp_response(self,pkt,pkt_dir):
+        print "tcp deny"
         pkt=self.swap_ip(pkt)
         tcp_pkt=self.strip_ip(pkt)
         new_seq=struct.pack('!I',0)#struct.unpack('!L',tcp_pkt[8:12])[0]) 
@@ -313,6 +314,7 @@ class Firewall:
         new_pkt=pkt[:ip_header_len] + new_tcp_pkt
         new_pkt=self.tcp_checksum(new_pkt)
         self.send_deny_pkt(new_pkt,pkt_dir)
+        print "tcp deny"
 
     def swap_ip(self,pkt):
         ttl=struct.pack('!B',64)
