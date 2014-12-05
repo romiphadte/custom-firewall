@@ -312,7 +312,11 @@ class Firewall:
 
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         new_pkt=pkt[:ip_header_len] + new_tcp_pkt
+        length=struct.pack('!H',len(new_pkt))
+        new_pkt=new_pkt[:2]+length+new_pkt[4:]
+
         new_pkt=self.tcp_checksum(new_pkt)
+        new_pkt=self.ip_checksum(new_pkt)
         self.send_deny_pkt(new_pkt,pkt_dir)
         print "tcp deny"
 
