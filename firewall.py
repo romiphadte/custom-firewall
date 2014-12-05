@@ -22,9 +22,11 @@ class Firewall:
         
         rules=[rule.strip("\n").lower() for rule in rules]
         rules=[rule.split() for rule in rules]
-        rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="pass" or rule[0]=="drop" or rule[0]=="log" or rule[0]=="deny")]
+        rules=[rule for rule in rules if len(rule) > 0 and (rule[0]=="deny" or rule[0]=="log" or rule[0]=="pass" or rule[0]=="drop")]
         rules=rules[::-1]
-       
+        self.log_rules=[rule for rule in rules if len(rule) >= 3 and rule[0] == "log" and rule[1] == "http"]
+        rules = [rule for rule in rules if len(rule) >= 2 and rule[0] != "log"]
+
         self.rules=rules #cleaned set of all rules that are in reverse priority
 
         # TODO: Load the GeoIP DB ('geoipdb.txt') as well.
@@ -36,7 +38,11 @@ class Firewall:
         ip_ranges=[ip_range.strip("\n").lower() for ip_range in ip_ranges]
         ip_ranges=[ip_range.split(" ") for ip_range in ip_ranges]
         self.ip_ranges=ip_ranges
-
+        
+        # http persistent connections
+        self.http_flows = {} # format (int_port, dest_ip):(next_seqno,pkt_dir,data_in,data_out, established)
+        self.counter = 1
+        self.pdbinterval = 3
 
     def country_for_ip(self,ip): #expecting ip string
         ip_min=0
@@ -79,7 +85,11 @@ class Firewall:
         for rule in self.rules:
             if self.packet_matches_rule(pkt,pkt_dir,rule,country):
                 if rule[0]=="pass":
-                    self.pass_packet(pkt,pkt_dir)
+                    if self.is_http(pkt, pkt_dir):
+                        if self.put_http_together(pkt, pkt_dir):
+                            self.pass_packet(pkt,pkt_dir)
+                    else:
+                        self.pass_packet(pkt,pkt_dir)
                 elif rule[0]=="drop":
                     print "Dropped packet according to rule:", rule, self.eval_pkt(pkt)
                 elif rule[0]=="deny" and rule[1]=="dns":
@@ -91,6 +101,130 @@ class Firewall:
                 return
         self.pass_packet(pkt,pkt_dir)
 
+    def is_http(self, pkt, pkt_dir):
+        pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
+        if pkt_protocol == 6:
+            tcp_pkt = self.strip_ip(pkt)
+            if len(tcp_pkt) >= 20:
+                incoming_80 = pkt_dir == PKT_DIR_INCOMING and int(struct.unpack('!H', tcp_pkt[0:2])[0]) == 80
+                outgoing_80 = pkt_dir == PKT_DIR_OUTGOING and int(struct.unpack('!H', tcp_pkt[2:4])[0]) == 80
+                return incoming_80 or outgoing_80
+            return False
+        else:
+            return False
+
+    def log_rule_matches(self, host_name, rule, pkt_dir):
+        if host_name == rule[2]:
+            return True
+        else:
+            rulename = rule[2].split('.')[::-1]
+            hostname = host_name.split('.')[::-1]
+            i = 0
+            while i < len(hostname) and i < len(rulename):
+                if rulename[i] == '*':
+                    return True
+                elif rulename[i] != hostname[i]:
+                    return False
+            return len(hostname) == len(rule_name)
+
+    def write_http(self, key, pkt_dir):
+        print "write http!"
+        val = self.http_flows[key]
+        logfile = open('http.log', 'a')
+        split_req = val[2].split()
+        h_match = re.search('Host:\s+(?P<hostname>\S+)', val[2])
+        if h_match:
+            host_name = h_match.group('hostname')
+            if type(host_name) == tuple:
+                host_name = host_name[0]
+        else:
+            host_name = key[1]
+        method = split_req[0]
+        path = split_req[1]
+        version = split_req[2]
+        status_code = val[3].split()[1]
+        os_match = re.search('Content-Length:\s+(?P<objsize>\w+)', val[3])
+        if os_match:
+            object_size = os_match.group('objsize')
+            if type(object_size) == tuple:
+                object_size = object_size[0]
+        else:
+            object_size = '-1'
+        log = "%s %s %s %s %s %s" % (host_name, method, path, version, status_code, object_size)
+        for rule in self.log_rules:
+            if self.log_rule_matches(host_name, rule, pkt_dir):
+                print "log rule matches!"
+                logfile.write(log)
+                logfile.flush()
+                break
+        flow = self.http_flows[key]
+        self.http_flows[key] = (flow[0], flow[1], '', '', flow[4])
+
+    def put_http_together(self, pkt, pkt_dir):
+        #if we keep this packet, return true. if we drop this packet due to out-of-order, we return false
+        #do the logging stuff here
+        tcp_pkt = self.strip_ip(pkt)
+        seqno = int(struct.unpack('!L', tcp_pkt[4:8])[0])
+        ackno = int(struct.unpack('!L', tcp_pkt[8:12])[0])
+        if pkt_dir == PKT_DIR_OUTGOING:
+            port = struct.unpack('!H',tcp_pkt[0:2])[0]
+            ip_addr = struct.unpack('!L',pkt[16:20])[0]
+        else:
+            port = struct.unpack('!H',tcp_pkt[2:4])[0]
+            ip_addr = struct.unpack('!L',pkt[12:16])[0]
+        key = (port, ip_addr)
+        http_pkt = self.strip_tcpip(pkt)
+        direction = ("<---INCOMING", "--->OUTGOING")
+        print str(key) + ":SN=" + str(seqno) + ", ACK=" + str(ackno) + direction[pkt_dir]
+        if key in self.http_flows:
+            val = self.http_flows[key]
+            print "expecting SN/ACK " + str(val[0])
+            if val[4] == 0:
+                if pkt_dir == PKT_DIR_INCOMING and ackno == val[0] + 1:
+                    self.http_flows[key] = (val[0] + 1, val[1], val[2], val[3], 1)
+                    return True
+                else:
+                    return False
+            elif val[4] == 1:
+                if pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
+                    self.http_flows[key] = (val[0], val[1], val[2], val[3], 2)
+            elif pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
+                if pkt_dir == val[1]:
+                    out_data = val[2] + http_pkt
+                    new_pkt_dir = pkt_dir
+                    #self.counter += 1
+                    #if self.counter % self.pdbinterval == 0:
+                    #    pdb.set_trace()
+                    if re.search("\r\n\r\n", out_data):
+                        print "outgoing packet finished"
+                        new_pkt_dir = PKT_DIR_INCOMING
+                    self.http_flows[key] = (seqno + len(http_pkt), new_pkt_dir, out_data, val[3], val[4])
+                return True
+            elif pkt_dir == PKT_DIR_INCOMING and ackno == val[0]:
+                if pkt_dir == val[1]:
+                    write = False
+                    in_data = val[3] + http_pkt
+                    new_pkt_dir = pkt_dir
+                    #self.counter += 1
+                    #if self.counter % self.pdbinterval == 0:
+                    #    pdb.set_trace()
+                    if re.search("\r\n\r\n", in_data):
+                        new_pkt_dir = PKT_DIR_OUTGOING
+                        write = True
+                    self.http_flows[key] = (ackno + len(http_pkt), new_pkt_dir, val[2], in_data, val[4])
+                    if write:
+                        self.write_http(key, pkt_dir)
+                return True
+            elif pkt_dir == PKT_DIR_OUTGOING and val[0] > seqno:
+                return True
+            elif pkt_dir == PKT_DIR_INCOMING and val[0] > ackno:
+                return True
+            else:
+                print "DROP"
+                return False
+        else:
+            self.http_flows[key] = (seqno, pkt_dir,'','', 0)
+            return True
 
     def eval_pkt(self,pkt):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
@@ -137,30 +271,28 @@ class Firewall:
                 return class_match and type_match and is_outgoing and port_match and one_question
         return False
 
-    def read_qname(self, dns_pkt):
+    def read_question(self, dns_pkt):
         next_len = 12
         length = struct.unpack('!B', dns_pkt[next_len])[0]
         while length != 0:
             next_len += length + 1
             length = struct.unpack('!B', dns_pkt[next_len])[0]
-        return dns_pkt[12:next_len + 1]
+        return dns_pkt[12:next_len + 1 + 4]
 
     def send_dns_response(self, pkt, pkt_dir):
         #pkt=self.swap_ip(pkt)
         udp_pkt = self.strip_ip(pkt)
         dns_pkt = udp_pkt[8:]
-        qname = self.read_qname(dns_pkt)
-        answer = qname + struct.pack('!H', 1)
-        answer += struct.pack('!H', 1) + struct.pack('!L', 1) + struct.pack('!H', 4)
-        answer += struct.pack('!B', 54) + struct.pack('!B', 173) + struct.pack('!B', 224) + struct.pack('!B', 150)
-        dns_header = dns_pkt[0:2] + struct.pack('!B', (struct.unpack('!B',dns_pkt[2])[0]|0x80)&0xf9)
-        dns_header += struct.pack('!L', 0) + struct.pack('!B', 1) + struct.pack('!L', 0)
-        dns_header += answer
+        question = self.read_question(dns_pkt)
+        answer = question[:-4] + struct.pack('!H', 1) #name + type
+        answer += struct.pack('!H', 1) + struct.pack('!L', 1) + struct.pack('!H', 4) #class+ttl+rlen
+        answer += struct.pack('!BBBB', 54,173,224,150)
+
+        dns_header = dns_pkt[0:2] + struct.pack('!BB',0b10000001,0x80)+ struct.pack('!HHHH', 0x1,0x1,0x0,0x0)
+        dns_header += question + answer
         udp_header = "%s%s%s%s" % (udp_pkt[2:4],udp_pkt[0:2],struct.pack('!H',8+len(dns_header)),struct.pack('!H',0))
         udp_header += dns_header
-        :#ip_header = struct.pack('!H',0x4500) + struct.pack('!H', len(udp_header)) + pkt[4:6] + struct.pack('!H',0)
-        #ip_header += struct.pack('!B',1) + struct.pack('!B',17) + struct.pack('!H',0) + pkt[16:20] + pkt[12:16]
-        #ip_header += dns_header
+        
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         ip_header=self.swap_ip(pkt)[:ip_header_len]+udp_header
         length=struct.pack('!H',len(ip_header))
@@ -322,6 +454,11 @@ class Firewall:
     def strip_ip(self,pkt):
         ip_header_len=(struct.unpack('!B',pkt[0:1])[0]&0xF)*4
         return pkt[ip_header_len:] 
+
+    def strip_tcpip(self,pkt):
+        tcp_pkt = self.strip_ip(pkt)
+        tcp_header_len = ((struct.unpack('!B',tcp_pkt[12])[0]&0xF0)>>4)*4
+        return tcp_pkt[tcp_header_len:]
 
     def should_ignore_packet(self,pkt):
         protocol=struct.unpack('!B',pkt[9:10])[0]
