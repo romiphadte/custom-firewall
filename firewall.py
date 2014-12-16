@@ -41,7 +41,8 @@ class Firewall:
     def country_for_ip(self,ip): #expecting ip string
         ip_min=0
         ip_max=len(self.ip_ranges) 
-
+        if ip_max==0:
+            return None
         while True:
             index=(ip_min+ip_max)/2
             r=self.ip_ranges[index]
