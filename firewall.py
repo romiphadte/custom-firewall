@@ -94,6 +94,8 @@ class Firewall:
                     print "Deny accoring to rule:", rule, self.eval_pkt(pkt)
                     self.send_tcp_response(pkt,pkt_dir)
                 return
+        if self.is_http(pkt, pkt_dir) and not self.put_http_together(pkt, pkt_dir):
+            return
         self.pass_packet(pkt,pkt_dir)
 
     def is_http(self, pkt, pkt_dir):
@@ -167,6 +169,11 @@ class Firewall:
         http_pkt = self.strip_tcpip(pkt)
         if key in self.http_flows:
             val = self.http_flows[key]
+            flag=struct.unpack('!B',tcp_pkt[13])[0]
+            if flag&0b00010001==0b00010001:
+                self.http_flows[key] = (seqno, pkt_dir,'','', 3)   
+            elif (val[4]==3 and flag&0b00010000=0b00010000) or flag&0b00000100:
+                self.http_flows.pop(key,None)
             if val[4] == 0:
                 if pkt_dir == PKT_DIR_INCOMING and ackno == val[0] + 1:
                     self.http_flows[key] = (val[0] + 1, val[1], val[2], val[3], 1)
@@ -176,6 +183,7 @@ class Firewall:
             elif val[4] == 1:
                 if pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
                     self.http_flows[key] = (val[0], val[1], val[2], val[3], 2)
+                return True
             elif pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
                 if pkt_dir == val[1]:
                     out_data = val[2] + http_pkt
