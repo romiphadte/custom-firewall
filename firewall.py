@@ -4,7 +4,6 @@ from main import PKT_DIR_INCOMING, PKT_DIR_OUTGOING
 import struct
 import socket
 import re
-import pdb
 
 # TODO: Feel free to import any Python standard moduless as necessary.
 # (http://docs.python.org/2/library/)
@@ -38,9 +37,6 @@ class Firewall:
         
         # http persistent connections
         self.http_flows = {} # format (int_port, dest_ip):(next_seqno,pkt_dir,data_in,data_out, established)
-        self.teardowns=0
-        self.state=-1
-        self.successful_connections=0
 
     def country_for_ip(self,ip): #expecting ip string
         ip_min=0
@@ -87,9 +83,6 @@ class Firewall:
                     if self.is_http(pkt, pkt_dir):
                         if self.put_http_together(pkt, pkt_dir):
                             self.pass_packet(pkt,pkt_dir)
-                        else:
-                            print "Dropped due to http out of order"
-                            pdb.set_trace()
                     else:
                         self.pass_packet(pkt,pkt_dir)
                 elif rule[0]=="drop":
@@ -178,40 +171,20 @@ class Firewall:
         if key in self.http_flows:
             val = self.http_flows[key]
             if flag&0b00010001==0b00010001 or flag&0b00000100:
-                self.log_state(0)
-                print "FINACK", seqno
                 self.http_flows.pop(key)
                 return True
-            #elif ((val[4]==3) and (flag&0b00010000==0b00010000)) or 
-            #    self.log_state(1)
-            #    self.teardowns+=1
-            #    #pdb.set_trace()
-            #    print "teardown", key
-            #    #self.http_flows.pop(key,None)
-            #    self.http_flows[key] = (val[0], val[1], val[2], val[3], -1)
-            #    return True
-            #elif val[4] == -1:
-            #    self.log_state(10)
-            #    print "SYN", seqno
-            #    #self.http_flows[key] = (seqno-1, val[1],'','', 0)
-            #    return True
-            elif val[4] == 0:
-                self.log_state(2)
-                print "SYNACK", ackno
+
+            if val[4] == 0:
                 if pkt_dir == PKT_DIR_INCOMING and ackno == val[0] + 1:
                     self.http_flows[key] = (val[0] + 1, val[1], val[2], val[3], 1)
                     return True
                 else:
                     return False
             elif val[4] == 1:
-                self.log_state(3)
-                print "ACK", seqno
-                self.successful_connections+=1
                 if pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
                     self.http_flows[key] = (val[0], val[1], val[2], val[3], 2)
                 return True
             elif pkt_dir == PKT_DIR_OUTGOING and seqno == val[0]:
-                self.log_state(4)
                 if pkt_dir == val[1]:
                     out_data = val[2] + http_pkt
                     new_pkt_dir = pkt_dir
@@ -220,7 +193,6 @@ class Firewall:
                     self.http_flows[key] = (seqno + len(http_pkt), new_pkt_dir, out_data, val[3], val[4])
                 return True
             elif pkt_dir == PKT_DIR_INCOMING and ackno == val[0]:
-                self.log_state(5)
                 if pkt_dir == val[1]:
                     write = False
                     in_data = val[3] + http_pkt
@@ -233,24 +205,16 @@ class Firewall:
                         self.write_http(key, pkt_dir)
                 return True
             elif pkt_dir == PKT_DIR_OUTGOING and val[0] > seqno:
-                self.log_state(6)
                 return True
             elif pkt_dir == PKT_DIR_INCOMING and val[0] > ackno:
-                self.log_state(7)
                 return True
             else:
-                self.log_state(8)
                 return False
         else:
             if flag&0x02:
-                self.log_state(9)
-                print "SYN", seqno
                 self.http_flows[key] = (seqno, pkt_dir,'','', 0)
             return True
 
-    def log_state(self, state):
-        self.prev_state=self.state
-        self.state = state
     def eval_pkt(self,pkt):
         pkt_protocol=struct.unpack('!B',pkt[9:10])[0]
         src_ip=socket.inet_ntoa(pkt[12:16])
