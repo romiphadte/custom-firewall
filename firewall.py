@@ -65,8 +65,8 @@ class Firewall:
         if self.should_ignore_packet(pkt):
             self.pass_packet(pkt,pkt_dir)
             return
-        if struct.unpack('!B',pkt[9:10])[0]==17:
-            self.ip_checksum(pkt) 
+        if struct.unpack('!B',pkt[9:10])[0]==6:
+            self.tcp_checksum(pkt) 
             
         ip=""
         src_ip=pkt[12:16]
@@ -336,7 +336,8 @@ class Firewall:
         ip_header=pkt[:ip_header_len] 
         tcp_pkt=self.strip_ip(pkt)
         tcp_pkt=tcp_pkt[:16]+struct.pack('!H',0)+tcp_pkt[18:]
-        entire=tcp_pkt+ip_header[12:16]+ip_header[16:20]+struct.pack('!H', 6)+struct.pack('!H',len(tcp_pkt))
+        #entire=tcp_pkt+ip_header[12:16]+ip_header[16:20]+struct.pack('!H', 6)+struct.pack('!H',len(tcp_pkt))
+        entire=ip_header[12:16]+ip_header[16:20]+0b0+struct.pack('!H',6)+struct.pack('!H',len(tcp_pkt))
         new_tcp=tcp_pkt[:16]+struct.pack('!H',self.checksum(entire))+tcp_pkt[18:]
         return ip_header+new_tcp
          
