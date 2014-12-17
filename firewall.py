@@ -173,7 +173,6 @@ class Firewall:
             if flag&0b00010001==0b00010001 or flag&0b00000100:
                 self.http_flows.pop(key)
                 return True
-
             if val[4] == 0:
                 if pkt_dir == PKT_DIR_INCOMING and ackno == val[0] + 1:
                     self.http_flows[key] = (val[0] + 1, val[1], val[2], val[3], 1)
