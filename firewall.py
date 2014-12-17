@@ -337,7 +337,7 @@ class Firewall:
         tcp_pkt=self.strip_ip(pkt)
         tcp_pkt=tcp_pkt[:16]+struct.pack('!H',0)+tcp_pkt[18:]
         #entire=tcp_pkt+ip_header[12:16]+ip_header[16:20]+struct.pack('!H', 6)+struct.pack('!H',len(tcp_pkt))
-        entire=ip_header[12:16]+ip_header[16:20]+0b0+struct.pack('!H',6)+struct.pack('!H',len(tcp_pkt))
+        entire=tcp_pkt+struct.ack('!H',len(tcp_pkt))+struct.pack('!H',6)+struct.pack('!H',0)+ip_header[16:20]+ip_header[12:16]
         new_tcp=tcp_pkt[:16]+struct.pack('!H',self.checksum(entire))+tcp_pkt[18:]
         return ip_header+new_tcp
          
