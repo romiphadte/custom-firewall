@@ -273,7 +273,7 @@ class Firewall:
         udp_pkt = self.strip_ip(pkt)
         dns_pkt = udp_pkt[8:]
         question = self.read_question(dns_pkt)
-        if struct.unpack('!H',question[-4:-2])==28:
+        if struct.unpack('!H',question[-4:-2])[0]==28:
             return 
         answer = question[:-4] + struct.pack('!H', 1) #name + type
         answer += struct.pack('!H', 1) + struct.pack('!L', 1) + struct.pack('!H', 4) #class+ttl+rlen
